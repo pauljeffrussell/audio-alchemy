@@ -1,0 +1,9 @@
+covers/*
+cred/*
+library/*
+library_mp3/*
+library_new/*
+webm/*
+ytm/*
+ffmpeg
+.DS_store
