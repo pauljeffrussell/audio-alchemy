@@ -1,9 +1,13 @@
 """
 This is the configuration file for the AudioAlchemy application. You'll need to configure these settings
 specific to your application.
+
+IMPORTANT: Once you have updated this file, rename it to configfile.py for your local installation
 """
 
 """
+
+
 The audio alchemy app uses a public google sheet to store it's database of albums. 
 
 You'll need to create a copy of the public one and replace the settings below to point to it.
