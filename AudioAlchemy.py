@@ -26,11 +26,11 @@ stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
 # Create a rotating file handler to log to a file
-formatterForLogFile = logging.Formatter('%(asctime)s %(message)s -- %(funcName)s %(lineno)d')
-file_handler = RotatingFileHandler(CONFIG.LOG_FILE_LOCATION, maxBytes=1024*1024, backupCount=5)
-file_handler.setLevel(logging.DEBUG)
-file_handler.setFormatter(formatterForLogFile)
-logger.addHandler(file_handler)
+#formatterForLogFile = logging.Formatter('%(asctime)s %(message)s -- %(funcName)s %(lineno)d')
+#file_handler = RotatingFileHandler(CONFIG.LOG_FILE_LOCATION, maxBytes=1024*1024, backupCount=5)
+#file_handler.setLevel(logging.DEBUG)
+#file_handler.setFormatter(formatterForLogFile)
+#logger.addHandler(file_handler)
 
 
 
