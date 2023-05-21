@@ -7,3 +7,4 @@ webm/*
 ytm/*
 ffmpeg
 .DS_store
+configfilemine.py
