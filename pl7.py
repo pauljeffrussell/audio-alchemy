@@ -35,6 +35,7 @@ PLAYER_RUNNING = False
 
 ALBUM_REPEAT = False
 
+SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
 
 # Initialize the current index and current track variables
@@ -61,7 +62,7 @@ def keep_playing():
     
 
 def play_folder(folder_path, shuffle, repeat):
-    global mp3_files, END_TRACK_INDEX, current_index, current_track, mp3_dir, ALBUM_LOADED, MUSIC_PAUSED, PLAYER_RUNNING
+    global mp3_files, END_TRACK_INDEX, current_index, current_track, mp3_dir, ALBUM_LOADED, MUSIC_PAUSED, PLAYER_RUNNING, SUPPORTED_EXTENSIONS
 
     
 
@@ -87,7 +88,12 @@ def play_folder(folder_path, shuffle, repeat):
     print("folder path: ", folder_path )
 
     # Get a list of all the MP3 files in the directory
-    mp3_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) ]
+    #valid_extensions = ['.mp3', '.wav', '.ogg']
+    mp3_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.splitext(f)[1] in SUPPORTED_EXTENSIONS]
+    
+    
+    # this line ysed to implode because of .DS_local files appearing in directories.
+    #mp3_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) ]
 
     # mp3_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.ogg')]
     
