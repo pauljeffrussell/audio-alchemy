@@ -37,6 +37,8 @@ ALBUM_REPEAT = False
 
 SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
+DEVICE_NAME = 'Audio Adapter (Unitek Y-247A) Mono'
+
 
 # Initialize the current index and current track variables
 current_index = 0
@@ -78,8 +80,9 @@ def play_folder(folder_path, shuffle, repeat):
     
     logging.debug("Initiallizing pygame...")
     # Initialize Pygame
-    pygame.mixer.pre_init(48000, -16, 2, 2048)
-    pygame.init()
+    startup()
+    #pygame.mixer.pre_init(48000, -16, 2, 2048, DEVICE_NAME)
+    #pygame.init()
     #pygame.mixer.init(48000, -16, 1, 1024)
     pygame.mixer.music.set_volume(1)
     logging.debug("Completed initializing pygame")
