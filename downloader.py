@@ -21,9 +21,7 @@ import pandas as pd
 import logging
 import configfile as CONFIG
 
-logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logging.WARNING)
-
-    
+logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logging.INFO)
 
 
 
@@ -48,7 +46,7 @@ TBD_NO_DOWNLOAD = [] # the list of Albums missing downloadable links
 
 
 
-
+FAILED_DOWNLOADS = 0
 
 
 """
@@ -63,14 +61,43 @@ def load_database():
     # Read the spreadsheet
     return pd.read_csv(db_url)
 
+def update_failed_downloads():
+    global FAILED_DOWNLOADS
+    FAILED_DOWNLOADS = FAILED_DOWNLOADS +1
+    logging.info(f'failed downloads updated to: {FAILED_DOWNLOADS}')
+    
 
+from downloader import update_failed_downloads
+
+class loggerOutputs:
+    
+    def error(msg):
+        print("Captured Error: "+msg)
+        #logging.error(f'FAILED DOWNLOAD track: {TRACK_NUMBER} {TRACK_NAME}')
+        update_failed_downloads()
+        
+    def warning(msg):
+        #check = True
+        print("Captured Warning: "+msg)
+    
+        
+    def debug(msg):
+        #check = True
+        print("Captured debug: "+msg)
+        
+        
 #####################################################################################
 #
 #   Given a youtube music URL and a folder, it downloads the contents of that URL to the folder
 #  
 ##################################################################################### 
 def download_album(url, folder):
+    global FAILED_DOWNLOADS
     # Download the video
+    
+
+    FAILED_DOWNLOADS = 0
+    
     logging.info(f'Downloading the album to "{folder}s"...')
     ydl_opts_old = {"outtmpl" : folder + "/%(playlist)s/%(playlist_index)s - %(title)s.%(ext)s",
                 "format" : "ba"
@@ -78,6 +105,13 @@ def download_album(url, folder):
                 
     ydl_opts={#'final_ext': 'mp3',
      'format': 'bestaudio/best',
+     'ignoreerrors': True,
+     #'nooverwrites': True,
+     #'no-abort-on-error': True,
+     #"quiet": True,
+     
+     "logger": loggerOutputs,
+     
      #'download-archive': "archive.txt" 
      #--write-info-json --no-overwrites --no-post-overwrites 
      #'postprocessors': [{'key': 'FFmpegExtractAudio',
@@ -88,7 +122,7 @@ def download_album(url, folder):
      "outtmpl" : folder + "/%(playlist_index)s - %(title)s.%(ext)s"}
      
      #'ffmpeg_location': 'ffmpeg'}            
-                
+             
     with YoutubeDL(ydl_opts
         #{
         #    "outtmpl": "%(playlist)s/%(playlist_index)s - %(title)s.%(ext)s"
@@ -97,9 +131,17 @@ def download_album(url, folder):
          #   "format": "bestvideo",
         #}
     ) as ydl:
-        ydl.download([url])
-
+        try:
+            #TRACK_NUMBER = TRACK_NUMBER+1
+            #info = ydl.extract_info(url)
+            
+            #TRACK_NAME = info['title']
+            #logging.info(f"Downloaded track: {track_title}")
+            ydl.download([url])
+        except:
+            logging.warning(f'Failed to Download Track. {url}')
     logging.info("Completed album download.")
+    logging.info(f'{FAILED_DOWNLOADS} Failed File Downloads')
 
 
 """

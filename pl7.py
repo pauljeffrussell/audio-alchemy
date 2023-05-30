@@ -26,8 +26,8 @@ MUSIC_PAUSED = 1
 ALBUM_LOADED = False # used to determine if I should cleanup pygame before starting the next track
 
 ## appears to be the same as ALBUM LOADED. Can probably be combined into one variable 
-PLAYER_RUNNING = False
-
+#PLAYER_RUNNING = False
+#ALBUM_IN_PROGRESS = False
 
 # should the current album be shuffled
 #ALBUM_SHUFFLE = False
@@ -45,33 +45,49 @@ current_index = 0
 
 
 def startup():
+    global ALBUM_REPEAT, ALBUM_LOADED, MUSIC_PAUSED, END_TRACK_INDEX
+    
+    
+    #reset the state back to the beginning state so we don't get weirdness
+    END_TRACK_INDEX = 0
+    MUSIC_PAUSED = 1
+    ALBUM_LOADED = False 
+    #PLAYER_RUNNING = False
+    ALBUM_REPEAT = False
+    
+    
     pygame.mixer.pre_init(48000, -16, 2, 2048)
     pygame.init()
-    
+    pygame.mixer.music.set_volume(1)
 
     
 def keep_playing():
-    global PLAYER_RUNNING, MUSIC_PAUSED
+    global MUSIC_PAUSED
     #Check if the current track has finished
-    #logging.debug(f'Next Song? Player Running: {PLAYER_RUNNING}.  Paused: {MUSIC_PAUSED}')
+    
+    busy = pygame.mixer.music.get_busy()
+    
+    #logging.debug(f'Next Song? Album in progress: {ALBUM_IN_PROGRESS}    Paused: {MUSIC_PAUSED}  Music Player Busy: {busy}' )
     
     
-    
-    if (PLAYER_RUNNING == True and MUSIC_PAUSED ==0 and pygame.mixer.music.get_busy() == False):
+    if (MUSIC_PAUSED ==0 and pygame.mixer.music.get_busy() == False):
+    #if (ALBUM_IN_PROGRESS == True and MUSIC_PAUSED ==0 and pygame.mixer.music.get_busy() == False):
         # Play the next track
         logging.debug(f'Track Ended. Playing Next Track.')
         next_track()
     
 
 def play_folder(folder_path, shuffle, repeat):
-    global mp3_files, END_TRACK_INDEX, current_index, current_track, mp3_dir, ALBUM_LOADED, MUSIC_PAUSED, PLAYER_RUNNING, SUPPORTED_EXTENSIONS
+    global mp3_files, END_TRACK_INDEX, current_index, current_track, mp3_dir, ALBUM_LOADED, MUSIC_PAUSED, SUPPORTED_EXTENSIONS, ALBUM_REPEAT
 
     
 
     if ALBUM_LOADED:
         shutdown_player()
 
-    PLAYER_RUNNING = True
+    #logging.debug('Setting Player Running to true')
+    #PLAYER_RUNNING = True
+    #logging.debug(f'Player Running to {PLAYER_RUNNING}')
     #ALBUM_SHUFFLE = shuffle
     
     # set this global so the keep playing and next functions know if they should repeat at album end.
@@ -84,7 +100,7 @@ def play_folder(folder_path, shuffle, repeat):
     #pygame.mixer.pre_init(48000, -16, 2, 2048, DEVICE_NAME)
     #pygame.init()
     #pygame.mixer.init(48000, -16, 1, 1024)
-    pygame.mixer.music.set_volume(1)
+    
     logging.debug("Completed initializing pygame")
 
     current_index = 0
@@ -121,6 +137,7 @@ def play_folder(folder_path, shuffle, repeat):
     #pygame.mixer.music.play()
     MUSIC_PAUSED = 0
     ALBUM_LOADED = True
+    #ALBUM_IN_PROGRESS = True
     print ("End track index", END_TRACK_INDEX)
 
 def play_pause_track():
@@ -154,7 +171,7 @@ def play_current_track():
 
 
 def next_track():
-    global current_index, mp3_files, MUSIC_PAUSED
+    global current_index, mp3_files, MUSIC_PAUSED, ALBUM_REPEAT
   
     MUSIC_PAUSED = 0
     # Stop the mixer
@@ -192,12 +209,12 @@ def prev_track():
 
 
 def shutdown_player():
-    global PLAYER_RUNNING
-    PLAYER_RUNNING = False
+    #global PLAYER_RUNNING
+    #PLAYER_RUNNING = False
     logging.debug('Starting Player Shutdown')
     
     # Define custom event constant
-    MY_CUSTOM_EVENT = pygame.USEREVENT + 1
+    #MY_CUSTOM_EVENT = pygame.USEREVENT + 1
     #pygame.event.post(pygame.event.Event(MY_CUSTOM_EVENT))
     #time.sleep(3)
     pygame.mixer.music.stop()

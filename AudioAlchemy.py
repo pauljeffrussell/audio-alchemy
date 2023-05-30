@@ -120,7 +120,7 @@ def lookup_field_by_field(df, search_column, search_term, result_column):
         result_value = df.loc[row_index, result_column]
         # Print the value
         
-        logger.debug(f'Found {result_column}: {result_value}s')
+        #logger.debug(f'Found {result_column}: {result_value}s')
         return result_value
     else:
         #didn't find that RFID in the sheet
@@ -222,15 +222,26 @@ def start_rfid_reader():
 def start_button_controls():
     GPIO.setwarnings(False) # Ignore warning for now
     GPIO.setmode(GPIO.BOARD ) # Use physical pin numbering
-    GPIO.setup(16, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
-    GPIO.setup(15, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
-    GPIO.setup(13, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
+    
+    if (CONFIG.BUTTON_HIGH):
+    
+        GPIO.setup(16, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
+        GPIO.setup(15, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
+        GPIO.setup(13, GPIO.IN, pull_up_down=GPIO.PUD_DOWN) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
 
+        GPIO.add_event_detect(16,GPIO.RISING,callback=button_callback_16, bouncetime=200) # Setup event on pin 10 rising edge
+        GPIO.add_event_detect(15,GPIO.RISING,callback=button_callback_15, bouncetime=200) # Setup event on pin 10 rising edge
+        GPIO.add_event_detect(13,GPIO.RISING,callback=button_callback_13, bouncetime=200) # Setup event on pin 10 rising edge
+    else:
+        GPIO.setup(16, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
+        GPIO.setup(15, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
+        GPIO.setup(13, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
 
-
-    GPIO.add_event_detect(16,GPIO.RISING,callback=button_callback_16, bouncetime=200) # Setup event on pin 10 rising edge
-    GPIO.add_event_detect(15,GPIO.RISING,callback=button_callback_15, bouncetime=200) # Setup event on pin 10 rising edge
-    GPIO.add_event_detect(13,GPIO.RISING,callback=button_callback_13, bouncetime=200) # Setup event on pin 10 rising edge
+        GPIO.add_event_detect(16,GPIO.FALLING,callback=button_callback_16, bouncetime=200) # Setup event on pin 10 rising edge
+        GPIO.add_event_detect(15,GPIO.FALLING,callback=button_callback_15, bouncetime=200) # Setup event on pin 10 rising edge
+        GPIO.add_event_detect(13,GPIO.FALLING,callback=button_callback_13, bouncetime=200) # Setup event on pin 10 rising edge
+        
+        
 
 
 
