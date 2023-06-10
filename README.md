@@ -1,39 +1,35 @@
 # audio-alchemy
-AudioAlchemy is the software portion of a raspberrypi based a stereo component that delivers a screen free 
-interface for streaming music. 
+
+AudioAlchemy is the software component of a Raspberry Pi-based stereo system that provides a screen-free interface for streaming music.
 
 ## The Problem
-Years ago I had a CD library. When streaming music became mainstream I gave away my CDs. 
 
-But streaming music never quite had the same feel as looking through physical media. There was nothing to touch. 
-All the music was represented by a small icon on a small screen and it was impossible to visualize albums by genera.
+Years ago, I had a CD library. When streaming music became mainstream, I gave away my CDs. However, streaming music never quite replicated the tactile experience of browsing through physical media. There was nothing to touch, and all the music was represented by small icons on a screen. It was impossible to visualize albums by genre.
 
-Finding the album I wanted meant I needed to know what it was and then search, or just scroll and scroll and scroll. And 
-after a day of working on a laptop the last thing I wanted to do was look at a screen.
+Finding a specific album meant either knowing its name and searching for it or endlessly scrolling through a digital library. After spending a day working on a laptop, the last thing I wanted to do was look at another screen. I longed for a way to experience the tactile sensation of physical media while enjoying the convenience of streaming music.
 
+## The Solution
 
-## A Solution
-I decided to build a music player that connected to my home stereo like a CD player. Instead of 
-CDs each album or playlist is represented by a card with and RFID tag on it. Here's how it works:
+To address this issue, I decided to build a music player that could connect to my home stereo system like a CD player. Instead of using CDs, I designed the system to use cards, with each card representing an album or playlist and equipped with an RFID tag. Here's how the system works:
 
-1. Cards were printed on card stock for each album using art available on the web.
-2. RFID tags are put on the back of the cards. 
-3. A spreadsheet (see configfile.py) is set up list each album and point to it's RFID tag 
-4. A Raspberrypi is set up to run AudioAlchemy.py on boot.  
-5. AudioAlchemy.py downloads the sheet and uses it as the music database. 
-6. Tapping a card plays the music associated with that card.
+1. I printed cards for each album on card stock, utilizing artwork available on the web.
+2. I attached RFID tags to the back of each card.
+3. I created a spreadsheet (see configfile.py) to list each album and its corresponding RFID tag.
+4. I set up a Raspberry Pi to run AudioAlchemy.py on boot.
+5. AudioAlchemy.py downloads the spreadsheet and uses it as the music database.
+6. By tapping a card, the associated music is played.
 
 ## Hardware
-This solution is built on top of the following hardware
 
-- Raspberrypi 3. 
+This solution relies on the following hardware components:
+
+- Raspberry Pi 3
 - RFID reader
-- Three buttons
-- - Previous Track
-- - Play / Pause
-- - Next Track
+- Three buttons:
+  - Previous Track
+  - Play/Pause
+  - Next Track
 
 ## Setup
-Setup instructions are in configfile.py, but there's a lot of setup steps left out of the instructions at this time.
 
-
+Setup instructions can be found in configfile.py, but please note that several setup steps have been omitted from the instructions at this time.
