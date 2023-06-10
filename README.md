@@ -32,4 +32,6 @@ This solution relies on the following hardware components:
 
 ## Setup
 
-Setup instructions can be found in configfile.py, but please note that several setup steps have been omitted from the instructions at this time.
+Setup instructions can be found in configfile.py.  
+
+Please note that several setup steps have been omitted from the instructions at this time because, well, I'm a bit lazy. Once the device started working I became much more interested in listening to music than writing instructions. 
