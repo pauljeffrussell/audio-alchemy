@@ -3,7 +3,9 @@ import os
 import logging
 import time
 import random
-
+import os
+import time
+#os.environ['SDL_AUDIODRIVER'] = 'dsp'
 
 
 
@@ -55,10 +57,26 @@ def startup():
     #PLAYER_RUNNING = False
     ALBUM_REPEAT = False
     
+    MIXER_LOADED = False
     
-    pygame.mixer.pre_init(48000, -16, 2, 2048)
-    pygame.init()
-    pygame.mixer.music.set_volume(1)
+    
+    ## It's possible for the audio drivers not to be loaded at the point this is called
+    ## So we try and if it doesn't work, we wait 5 seconds and try again.
+    ## Rinse and repeat until it works.
+    while not MIXER_LOADED:
+        try:
+            logging.debug("Attempting to load the mixer.")
+            pygame.mixer.pre_init(48000, -16, 2, 2048)
+            pygame.init()
+            pygame.mixer.init()
+            pygame.mixer.music.set_volume(1)
+            logging.debug("SUCCESS! The mixer loaded.")
+            MIXER_LOADED = True
+        except:
+            logging.debug("Mixer load failed. Retrying in 5 seconds.")
+            time.sleep(5)
+
+
 
     
 def keep_playing():

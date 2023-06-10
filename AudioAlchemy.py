@@ -4,6 +4,7 @@ from yt_dlp import YoutubeDL
 import pandas as pd
 import pl7 as aaplayer
 import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library  
+from gpiozero import Button
 from mfrc522 import SimpleMFRC522
 import threading
 import logging
@@ -11,6 +12,7 @@ from logging.handlers import RotatingFileHandler
 import sys
 import time
 import configfile as CONFIG
+
 
 
 # Create the logger
@@ -54,6 +56,11 @@ Stops all playback, resets the player, reloads the database
 STOP_AND_RELOAD_DB = CONFIG.STOP_AND_RELOAD_DB 
 
 """
+Shuts down the application and exits.
+"""
+SHUT_DOWN_APP = CONFIG.SHUT_DOWN_APP
+
+"""
 Tells the player to keep playing continuously. It will 
 """
 PLAYBACK_CONTINUOUS = "12345"
@@ -68,6 +75,25 @@ Tells the player to shuffel the current playlist
 """
 PLAYBACK_SHUFFEL_ALBUM = "12345"
 
+"""
+This is used to deal with hardware duplicate button pushes and RF bleed between GPIO pins.
+"""
+LAST_BUTTON_TIME = 0;
+
+def my_interrupt_handler(channel):
+    global LAST_BUTTON_TIME    
+    
+    interrupt_time = int(round(time.time() * 1000))
+    #interrupt_time = millis();
+    ## If interrupts come faster than 200ms, assume it's a bounce and ignore
+    if (interrupt_time - LAST_BUTTON_TIME > 200):
+        LAST_BUTTON_TIME = interrupt_time
+        return True
+    else:
+        LAST_BUTTON_TIME = interrupt_time
+        logging.debug(f'Debounced {channel}')
+        return False
+
 
 def load_database():
     db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
@@ -81,7 +107,7 @@ Checks to see if it recieved a command card. If it did, it executes the command 
     
 """
 def command_card_handler(rfid_code):
-    global DB, STOP_AND_RELOAD_DB
+    global DB, STOP_AND_RELOAD_DB, SHUT_DOWN_APP, APP_RUNNING
     command_code = str(rfid_code)
     
     if (command_code == STOP_AND_RELOAD_DB ):
@@ -89,6 +115,10 @@ def command_card_handler(rfid_code):
         DB = load_database()
         aaplayer.shutdown_player()
         aaplayer.startup()
+        return True
+    elif (command_code == SHUT_DOWN_APP ):
+        logger.debug('Read RFID to shutdown application')
+        APP_RUNNING = False
         return True
     else:
         return False
@@ -189,16 +219,19 @@ def handle_rfid_read(rfid_code):
           
          
 def button_callback_16(channel):
-    print("Previous Track Button was pushed!")
-    aaplayer.prev_track()
+    if (my_interrupt_handler(channel)):
+        logger.info("Previous Track Button was pushed!")
+        aaplayer.prev_track()
 
 def button_callback_15(channel):
-    print("Play/Pause Button was pushed!")
-    aaplayer.play_pause_track()
+    if (my_interrupt_handler(channel)):
+        logger.info("Play/Pause Button was pushed!")
+        aaplayer.play_pause_track()
     
 def button_callback_13(channel):
-    print("Next Track Button was pushed!")
-    aaplayer.next_track()
+    if (my_interrupt_handler(channel)):
+        logger.info("Next Track Button was pushed!")
+        aaplayer.next_track()
 
 def start_rfid_reader():
     global APP_RUNNING
@@ -220,7 +253,7 @@ def start_rfid_reader():
 
 
 def start_button_controls():
-    GPIO.setwarnings(False) # Ignore warning for now
+    """GPIO.setwarnings(False) # Ignore warning for now
     GPIO.setmode(GPIO.BOARD ) # Use physical pin numbering
     
     if (CONFIG.BUTTON_HIGH):
@@ -241,7 +274,15 @@ def start_button_controls():
         GPIO.add_event_detect(15,GPIO.FALLING,callback=button_callback_15, bouncetime=200) # Setup event on pin 10 rising edge
         GPIO.add_event_detect(13,GPIO.FALLING,callback=button_callback_13, bouncetime=200) # Setup event on pin 10 rising edge
         
-        
+    """   
+    button16 = Button("BOARD16")
+    button15 = Button("BOARD15")
+    button13 = Button("BOARD13")
+
+
+    button16.when_pressed = button_callback_16
+    button15.when_pressed = button_callback_15
+    button13.when_pressed = button_callback_13
 
 
 
@@ -298,17 +339,19 @@ def main():
         APP_RUNNING = False
         #rfidthread.join()
         time.sleep(.3)
-        logger.debug('Shutting down buttons and RFID - GPIO.cleanup()')
+        
+    logger.debug('Shutting down buttons and RFID - GPIO.cleanup()')
 
-        GPIO.cleanup() # Clean up
-        try:
-            logger.debug('Shutting down player - aaplayer.shutdown_player())')
-            
-            aaplayer.shutdown_player()
-        finally:
-            print("Program complete.")
-            logger.debug('Program Complete.')
-            sys.exit()
+    #GPIO.cleanup() # Clean up
+    
+    try:
+        logger.debug('Shutting down player - aaplayer.shutdown_player())')
+        
+        aaplayer.shutdown_player()
+    finally:
+        print("Program complete.")
+        logger.debug('Program Complete.')
+        sys.exit()
 
 
 
