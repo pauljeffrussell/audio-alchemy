@@ -1,0 +1,6 @@
+## THIS SCRIPT IS USED TO START AudioAlchemy.
+## It is called by /etc/rc.local and runs the app. the -B tells python not to cache compiled code to disk which we avoid because we're 
+## running in kiosk mode and don't want the extra writes to disk
+
+sudo /usr/bin/python3 -B /media/audioalchemy/AudioAlchemy.py &
+#sudo /usr/bin/python3 -B /media/audioalchemy/AudioAlchemy.py > /media/audioalchemy/1medialog.log 2>&1 &
