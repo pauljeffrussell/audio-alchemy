@@ -30,21 +30,33 @@ DB_SHEET_NAME = 'Sheet 1'    ## this is the name of the individual sheet. by def
 ## This is where you've saved your MP3s that will be read by the app
 LIBRARY_CACHE_FOLDER = "/media/audioalchemy/library/"
 
+## This is where the system will save caches of the album library
+DB_CACHE_LOCATION = "/media/audioalchemy/dbcache/"
 
 ## This is the RFID ID for the object that stops and reinitializes the player
 ## You'll want to replace this with whatever RFID you use.
 STOP_AND_RELOAD_DB = "750150895668" 
 
 
+## This is the RFID ID for the object that stops the entire application.
+## When this code is read, the application will exit
+## You'll want to replace this with whatever RFID you use to kill the app.
+SHUT_DOWN_APP = "344226340374"
 
-
+## This is where the log file will be written. If you're running the 
+## app at startup this is how you'll find out what's happening
+#LOG_FILE_LOCATION = "/home/matt/dev/zzlog_file.log"
 LOG_FILE_LOCATION = '[insert your home directory here]'
 
 
-
+## Use bulk downloading to keep from pinging youtube music every time.
+## no reason to clobber their bandwith with repeated requests for the same thing.
+##
+## when set to true, the downloader will attempt to get every album in your db sheet.
+## when set to false it will list the albums that don't yet have a folder in ./webm
 BULK_DOWNLOAD = False
 
-
+BUTTON_HIGH = False
 
 
 
