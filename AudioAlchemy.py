@@ -20,7 +20,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
 # Create a formatter
-formatter = logging.Formatter('%(message)s -- %(funcName)s %(lineno)d')
+formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
 # Create a stream handler to log to STDOUT
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setLevel(logging.DEBUG)
@@ -46,6 +46,9 @@ DB = pd.DataFrame()
 
 APP_RUNNING = True
 
+DB_CACHE_FOLDER = CONFIG.DB_CACHE_LOCATION
+
+DB_CACHE = DB_CACHE_FOLDER + "dbcache.csv"
 
 
 #### COMMANDS
@@ -95,13 +98,97 @@ def my_interrupt_handler(channel):
         return False
 
 
-def load_database():
-    db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
+"""def load_database():
+    
+    
+    #At app start look for the cached DB
+    
+    #if you find it load it.
+    
+    #if you don't find it, load it from the web and save it
+    
+    
+    
+    
+    DB_LOADED = False
+    
+    while not DB_LOADED:
+        try:
+            logging.debug("Attempting to load the DB from the internet.")
+            db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
 
-    logger.info(f'DB URL: {db_url}s')
-    # Read the spreadsheet
-    return pd.read_csv(db_url)
+            logger.info(f'DB URL: {db_url}s')
+            # Read the spreadsheet
+            
+            loaded_db = pd.read_csv(db_url)
+            logging.debug("SUCCESS! The mixer loaded.")
+            DB_LOADED = True
+            return loaded_db
+        except:
+            logging.debug("DB load failed. Retrying in 3 seconds.")
+            time.sleep(3)
+    """
+     
+     
+def load_database(LOAD_FROM_WEB):
+    
+    
+    DB_LOADED = False
+    
+    if not LOAD_FROM_WEB:
+        if os.path.exists(DB_CACHE):
+            logging.debug(f'Attempting to load the DB from {DB_CACHE}')
+            loaded_db = pd.read_csv(DB_CACHE)
+            logging.debug("SUCCESS! DB loaded from cache.")
+            DB_LOADED = True
+            return loaded_db
+        else:
+            logging.debug("No Cached DB available. Attempting to load from web.")
+            
 
+    while not DB_LOADED:
+        try:
+            logging.debug("Attempting to load the DB from the internet.")
+            db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
+
+            logger.info(f'DB URL: {db_url}s')
+            # Read the spreadsheet
+        
+            loaded_db = pd.read_csv(db_url)
+            logging.debug("SUCCESS! The DB loaded from the web.")
+            
+            backup_cache()
+            loaded_db.to_csv(DB_CACHE, index=False)
+                
+            DB_LOADED = True
+            return loaded_db
+        except:
+            #logging.debug(f'An exception occurred: {str(e)}')
+            logging.debug("DB load failed. Retrying in 3 seconds.")
+            time.sleep(3)
+
+            
+        
+    
+def backup_cache():
+    logging.debug(f'Attempting to backup existing cache {DB_CACHE}')
+    if os.path.exists(DB_CACHE):
+        # Create a timestamp for the backup file name
+       
+        current_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+        milliseconds = int((time.time() - int(time.time())) * 1000)
+
+        current_datetime_with_ms = f"{current_time}-{milliseconds:03d}"
+    
+        # Backup the existing file with a timestamp in the file name
+        backup_path = f'{DB_CACHE}_backup_{current_datetime_with_ms}.csv'
+        os.rename(DB_CACHE, backup_path)
+        logging.debug(f'Backed upexisting cache to {backup_path}')
+    else:
+        logging.debug(f'No cache file found at {DB_CACHE} to backup. ')
+    
+
+        
 """
 Checks to see if it recieved a command card. If it did, it executes the command provided by the ccard
     
@@ -112,7 +199,7 @@ def command_card_handler(rfid_code):
     
     if (command_code == STOP_AND_RELOAD_DB ):
         logger.debug('Executing Command Card Stop Player & Reload Database')
-        DB = load_database()
+        DB = load_database(True)
         aaplayer.shutdown_player()
         aaplayer.startup()
         return True
@@ -291,7 +378,7 @@ def main():
     
     #try:
     # Load the database of RFID tags and their matching albums
-    DB = load_database()
+    DB = load_database(False)
 
     #with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
     print(DB)

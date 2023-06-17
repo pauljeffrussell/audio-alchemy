@@ -213,7 +213,7 @@ def list_non_downloaded_albums():
         
         #if (url !=0):
         #    album_id = get_album_id(url)
-        if (url.startswith('https://music.youtube.com') == False):
+        if (url.startswith('https://music.youtube.com') == False and url.startswith('https://www.youtube.com') == False):
                TBD_NO_DOWNLOAD.append(album_folder_name)
                album_folder_name = 0
            
