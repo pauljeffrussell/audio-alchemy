@@ -8,4 +8,5 @@ ytm/*
 ffmpeg
 .DS_store
 configfile.py
+__pycache__/*
 
