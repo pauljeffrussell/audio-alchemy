@@ -1,0 +1,5 @@
+## THIS IS A HELPER SCRIPT
+## Since AudioAlchemy is intended to be run as a background process, there is sometimes a need to connect to that process.
+## this script finds the process and connects to it so you can see the std out.
+
+sudo strace -p $(pgrep python3) -s 9999 -e write
