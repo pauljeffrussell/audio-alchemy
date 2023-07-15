@@ -157,6 +157,41 @@ def play_folder(folder_path, shuffle, repeat):
     ALBUM_LOADED = True
     #ALBUM_IN_PROGRESS = True
     print ("End track index", END_TRACK_INDEX)
+    
+    
+    
+def play_tracks(tracks, repeat):
+    global mp3_files, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT
+
+
+    if ALBUM_LOADED:
+        shutdown_player()
+
+    # set this global so the keep playing and next functions know if they should repeat at album end.
+    ALBUM_REPEAT = repeat
+    
+    # Initialize Pygame    
+    logging.debug("Initiallizing pygame...")
+    startup()
+    logging.debug("Completed initializing pygame")
+
+    current_index = 0
+    
+    # make the list of tracks available to the entire player
+    mp3_files = tracks
+    END_TRACK_INDEX = len(mp3_files)
+    logging.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
+    
+    # Play the first track
+    #current_track = mp3_files[current_index]
+    play_current_track()
+
+    MUSIC_PAUSED = 0
+    ALBUM_LOADED = True
+    
+    
+        
+    
 
 def play_pause_track():
     global MUSIC_PAUSED
