@@ -190,8 +190,75 @@ def play_tracks(tracks, repeat):
     ALBUM_LOADED = True
     
     
-        
+def jump_to_next_album():
+    global mp3_files, current_index
     
+    index = current_index
+    file_paths = mp3_files
+    
+    current_directory = os.path.dirname(file_paths[index])
+    next_index = index + 1
+
+    while next_index < len(file_paths):
+        next_directory = os.path.dirname(file_paths[next_index])
+        if next_directory != current_directory:
+            logging.debug(f'New Index Found {next_index}...')
+            jump_to_track(next_index)
+            return 1     
+        next_index += 1
+    logging.debug(f'Returning to Index 0...')  
+    jump_to_track(0)   # No different directory found after the given index
+
+
+def jump_to_previous_album():
+    global mp3_files, current_index
+    
+    index = current_index
+    file_paths = mp3_files
+    
+    current_directory = os.path.dirname(file_paths[index])
+    
+    ## first check if you're on the first track of the album.
+    ## if not, go to that first track
+    first_track_of_current_album = get_index_of_first_track(current_directory)
+    if first_track_of_current_album != index:
+        jump_to_track(first_track_of_current_album)    
+        return 1
+        
+    ## if you got here, you were already on the first track of the album
+    ## so now we want to find the first track of the previous album
+    prev_index = index -1
+    
+    if prev_index < 0:
+        prev_index = len(file_paths) - 1
+
+    while prev_index > 0:
+        prev_directory = os.path.dirname(file_paths[prev_index])
+        if prev_directory != current_directory:
+            # you've found the last track of the previous album
+            
+            # now find the first track of that previous album
+            album_first_track = get_index_of_first_track(prev_directory)
+            
+            logging.debug(f'New Index Found {album_first_track}...')
+            jump_to_track(album_first_track)
+            return 1     
+        prev_index -= 1
+    logging.debug(f'Returning to Index 0...')  
+    jump_to_track(0)   # No different directory found after the given index
+
+
+def get_index_of_first_track(album_directory):
+    global mp3_files
+    
+    for index in range(len(mp3_files)):
+        if os.path.dirname(mp3_files[index]) == album_directory:
+            return index
+    
+    return 0
+    
+    
+
 
 def play_pause_track():
     global MUSIC_PAUSED
@@ -221,6 +288,19 @@ def play_current_track():
     pygame.mixer.music.load(current_track)
     pygame.mixer.music.play()
     
+
+def jump_to_track(track_index):
+    global current_index, mp3_files, MUSIC_PAUSED
+  
+    MUSIC_PAUSED = 0
+    # Stop the mixer
+    pygame.mixer.music.stop()
+    
+    # Get the next index
+    current_index = track_index
+    play_current_track()
+    
+  
 
 
 def next_track():

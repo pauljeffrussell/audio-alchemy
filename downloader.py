@@ -105,9 +105,13 @@ def download_album(url, folder):
                 
     ydl_opts={#'final_ext': 'mp3',
      'format': 'bestaudio/best',
+     #'username': 'russelldad@gmail.com',
      'ignoreerrors': True,
+     #'cookies-from-browser': 'brave',
+     #'cookies': './cookies.txt',
+     #'cookies-from-browser': '/Users/paul/Library/Application Support/BraveSoftware/Brave-Browser',
      #'nooverwrites': True,
-     #'no-abort-on-error': True,
+     'no-abort-on-error': True,
      #"quiet": True,
      
      "logger": loggerOutputs,

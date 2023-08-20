@@ -48,6 +48,11 @@ SHUT_DOWN_APP = "344226340374"
 #LOG_FILE_LOCATION = "/home/matt/dev/zzlog_file.log"
 LOG_FILE_LOCATION = '[insert your home directory here]'
 
+## This is the time in seconds you have to hold a button for the 
+## app to consider the button being held. It is used for things like
+## skipping to the next album in a playlist of albums or to go back to the
+## beginning of an album in the case of a single album.
+BUTTON_HOLD_DURATION = 1.5
 
 ## Use bulk downloading to keep from pinging youtube music every time.
 ## no reason to clobber their bandwith with repeated requests for the same thing.

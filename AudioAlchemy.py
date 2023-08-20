@@ -59,6 +59,7 @@ BLANK = 'BLANK'
 
 SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
+BUTTON_HOLD_DURATION = CONFIG.BUTTON_HOLD_DURATION
 
 #### COMMANDS
 
@@ -90,7 +91,13 @@ PLAYBACK_SHUFFEL_ALBUM = "12345"
 """
 This is used to deal with hardware duplicate button pushes and RF bleed between GPIO pins.
 """
-LAST_BUTTON_TIME = 0;
+LAST_BUTTON_TIME = 0
+
+"""
+Track if the last button push was to skip to the next album
+"""
+LAST_BUTTON_HELD = False
+
 
 def my_interrupt_handler(channel):
     global LAST_BUTTON_TIME    
@@ -307,18 +314,33 @@ def lookup_field_by_field(df, search_column, search_term, result_column):
 
           
 """
-Return true if the album is set to shuffle
+Return true if the song is set to shuffle
     false otherwise            
 """                 
+def is_song_shuffle(rfid_code):
+    global DB
+    
+    suffle_songs = lookup_field_by_field(DB, 'rfid', rfid_code, 'shuffle_songs')  
+    if suffle_songs == 1:
+        return True
+    else:
+        return False
+        
+"""
+Return true if the album is set to shuffle
+   false otherwise            
+"""       
 def is_album_shuffle(rfid_code):
     global DB
     
-    suffle_album = lookup_field_by_field(DB, 'rfid', rfid_code, 'shuffle_songs')  
+    suffle_album = lookup_field_by_field(DB, 'rfid', rfid_code, 'shuffle_albums')  
     if suffle_album == 1:
         return True
     else:
         return False
-
+        
+        
+        
 """
 Return true if the album is set to repeat
     false otherwise            
@@ -337,7 +359,7 @@ def is_album_repeat(rfid_code):
 """
 Returns a list of the paths to the library folders that match the provided genre and sub_genre
 """
-def get_albums_for_genre(genre, sub_genre):
+def get_albums_for_genre(genre, sub_genre, shuffle_albums):
           
     if (len(genre) != 0 and len(sub_genre) != 0):      
         condition = "genre == '" + genre + "' and sub_genre == '" + sub_genre + "'"   
@@ -362,12 +384,18 @@ def get_albums_for_genre(genre, sub_genre):
 
     # Convert the matching folders to a list
     matching_folders_list = matching_folders.tolist()
+    
+    if(shuffle_albums):
+        random.shuffle(matching_folders_list)
+    else:
+        matching_folders_list.sort()
+    
     matching_folders_list = [LIBRARY_CACHE_FOLDER + folder for folder in matching_folders_list]
 
     return matching_folders_list
 
 
-def get_albums_for_label(label):
+def get_albums_for_label(label, shuffle_albums):
 
     logger.debug(f'Looking up albums with label: {label}...')
 
@@ -379,12 +407,15 @@ def get_albums_for_label(label):
     # Convert the matching folders to a list
     matching_folders_list = matching_folders.tolist()
         
-        
+    if(shuffle_albums):
+        random.shuffle(matching_folders_list)
+    else:
+        matching_folders_list.sort()
+    
     matching_folders_list = [LIBRARY_CACHE_FOLDER + folder for folder in matching_folders_list]
 
     return matching_folders_list
       
-    
     
 
 
@@ -398,7 +429,7 @@ def get_tracks(folders, shuffle_tracks):
     all_tracks = []
     
     #shuffle the albums so we don't always start with the same album
-    random.shuffle(folders)
+    #random.shuffle(folders)
     
     for folder in folders:
         #folder_path = os.path.join(base_folder_path, folder)  # Assuming a base folder path
@@ -441,9 +472,9 @@ def handle_rfid_read(rfid_code):
         sub_genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'sub_genre')
         
         #get the list of all the folders from this genre
-        genre_album_folder_list = get_albums_for_genre(genre, sub_genre)
+        genre_album_folder_list = get_albums_for_genre(genre, sub_genre, is_album_shuffle(rfid_code))
         
-        tracks = get_tracks(genre_album_folder_list, is_album_shuffle(rfid_code))
+        tracks = get_tracks(genre_album_folder_list, is_song_shuffle(rfid_code))
         
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
@@ -452,8 +483,8 @@ def handle_rfid_read(rfid_code):
     elif (label_card == 1):
         #this card is a label card. It is intended to play all of the albums with a matching lable.
         label = lookup_field_by_field(DB, 'rfid', rfid_code, 'labels')
-        label_album_folder_list = get_albums_for_label(label)
-        tracks = get_tracks(label_album_folder_list, is_album_shuffle(rfid_code))
+        label_album_folder_list = get_albums_for_label(label, is_album_shuffle(rfid_code))
+        tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
         
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
@@ -465,7 +496,7 @@ def handle_rfid_read(rfid_code):
 
         album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
             
-        tracks = get_tracks([album_folder], is_album_shuffle(rfid_code))
+        tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
 
         if (len(tracks) > 0):
             logger.debug (f'Album has tracks. Playing...')
@@ -505,7 +536,7 @@ def handle_rfid_read_old(rfid_code):
             if os.path.exists(album_folder):
                 #if os.path.isdir(folder_name): 
                 logger.debug (f'Album folder exists. Playing {album_folder_name}')
-                aaplayer.play_folder( album_folder, is_album_shuffle(rfid_code), is_album_repeat(rfid_code) )
+                aaplayer.play_folder( album_folder, is_song_shuffle(rfid_code), is_album_repeat(rfid_code) )
             else:
                 logger.warning (f'Folder {album_folder} does not exist.')
                 
@@ -544,7 +575,7 @@ def handle_rfid_read_old(rfid_code):
                 
                 
                 ## play all 
-                aaplayer.play_genre(genre_album_list, is_album_shuffle(rfid_code), is_album_repeat(rfid_code))
+                aaplayer.play_genre(genre_album_list, is_song_shuffle(rfid_code), is_album_repeat(rfid_code))
                 
                 
             else:
@@ -561,30 +592,64 @@ def handle_rfid_read_old(rfid_code):
                     if os.path.exists(album_folder):
                         #if os.path.isdir(folder_name): 
                         logger.debug (f'Album folder exists. Playing {album_folder_name}')
-                        aaplayer.play_folder( album_folder, is_album_shuffle(rfid_code), is_album_repeat(rfid_code) )
+                        aaplayer.play_folder( album_folder, is_song_shuffle(rfid_code), is_album_repeat(rfid_code) )
                     else:
                         logger.warning (f'Folder {album_folder} does not exist.')
                     
         
 """
 
-
+"""
+Returns True if the last button action was a held button.      
+"""
+def last_button_held():
+    global LAST_BUTTON_HELD
+    
+    current_value = LAST_BUTTON_HELD
+    LAST_BUTTON_HELD = False
+    return current_value
+    
+    
           
          
 def button_callback_16(channel):
-    if (my_interrupt_handler(channel)):
+    
+    # make sure to debounce partial button pushes AND
+    # skip this button release if the last button push was held down. 
+    if (my_interrupt_handler(channel) and not last_button_held()):
         logger.info("Previous Track Button was pushed!")
         aaplayer.prev_track()
 
 def button_callback_15(channel):
-    if (my_interrupt_handler(channel)):
+    
+    # make sure to debounce partial button pushes AND
+    # skip this button release if the last button push was held down.
+    if (my_interrupt_handler(channel) and not last_button_held()):
         logger.info("Play/Pause Button was pushed!")
         aaplayer.play_pause_track()
     
 def button_callback_13(channel):
-    if (my_interrupt_handler(channel)):
+    
+    # make sure to debounce partial button pushes AND
+    # skip this button release if the last button push was held down.
+    if (my_interrupt_handler(channel) and not last_button_held()):
         logger.info("Next Track Button was pushed!")
         aaplayer.next_track()
+        
+        
+def button_forward_held_callback(channel):
+    global LAST_BUTTON_HELD
+    LAST_BUTTON_HELD = True
+    logger.info("SKIP TO NEXT ALBUM!")
+    aaplayer.jump_to_next_album()
+    
+def button_backward_held_callback(channel):
+    global LAST_BUTTON_HELD
+    LAST_BUTTON_HELD = True
+    logger.info("SKIP TO PREVIOUS ALBUM!")
+    aaplayer.jump_to_previous_album()
+    
+    
 
 def start_rfid_reader():
     global APP_RUNNING
@@ -612,9 +677,24 @@ def start_button_controls():
     button13 = Button("BOARD13")
 
 
-    button16.when_pressed = button_callback_16
-    button15.when_pressed = button_callback_15
-    button13.when_pressed = button_callback_13
+    #button16.when_pressed = button_callback_16
+    #button15.when_pressed = button_callback_15
+    #button13.when_pressed = button_callback_13
+
+
+    ## Previous button
+    button16.when_released = button_callback_16
+    button16.hold_time = BUTTON_HOLD_DURATION
+    button16.when_held = button_backward_held_callback
+    
+    ## Play Pause Button
+    button15.when_released = button_callback_15
+    
+    ## Next Button
+    button13.when_released = button_callback_13
+    button13.hold_time = BUTTON_HOLD_DURATION
+    button13.when_held = button_forward_held_callback
+
 
 
 

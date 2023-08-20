@@ -16,9 +16,10 @@ import threading
 import logging
 import subprocess
 import configfile as CONFIG
+import numpy as np
 
 
-logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logging.INFO)
+logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logging.DEBUG)
 
 
 
@@ -85,10 +86,13 @@ def list_non_converted_albums():
     TBD_DOWNLOAD = []
     for album_name in DB['folder'].values:
 
-        
-        if (album_name != 0):
+        logging.debug(f'Album Name: {album_name}...')
+        if (album_name != 0 and album_name != np.nan):
+            #try:
             album_folder = LIBRARY_CACHE_FOLDER + album_name
-
+            #except:
+                
+                
             logging.debug(f'checking {album_folder}s...')
             if os.path.exists(album_folder):
                 #if os.path.isdir(folder_name): 
@@ -104,7 +108,31 @@ def list_non_converted_albums():
         print("{}  {}".format(idx, album))
     
    
-  
+def check_directories():
+     global TBD_DOWNLOAD
+     
+     # Initialize an empty list for directories not found in './library/'
+     #missing_directories = []
+
+     # List all directories in './webm/'
+     #webm_dirs = next(os.walk('./webm/'))[1]
+     webm_dirs = sorted(next(os.walk('./webm/'))[1], key=str.lower)
+
+     # Check if each directory in './webm/' also exists in './library/'
+     for directory in webm_dirs:
+         if not os.path.isdir(os.path.join('./library/', directory)):
+             # If directory does not exist in './library/', add it to the list
+             TBD_DOWNLOAD.append(directory)
+             #missing_directories.append(directory)
+
+     #print out the list of available 
+     for idx, album in enumerate(TBD_DOWNLOAD):
+         print("{}  {}".format(idx, album))
+        
+     # Return the list of directories not found in './library/'
+     #return missing_directories
+
+
     
 
 def convert_audio(source_file, source_folder, destination_folder):
@@ -137,12 +165,17 @@ def main():
     
     #try:
     # Load the database of RFID tags and their matching albums
-    DB = load_database()
+    #DB = load_database()
 
     #list_non_downloaded_albums()
     #list_non_downloaded_albums()
 
-    list_non_converted_albums()
+    #list_non_converted_albums()
+    
+    # Test the function
+    check_directories()
+    #print(f"Missing Directories: {missing}")
+    
 
     BULK_RUN = True
     if BULK_RUN:

@@ -1,4 +1,6 @@
 covers/*
+dbcache/*
+test/*
 cred/*
 library/*
 library_mp3/*
