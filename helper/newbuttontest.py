@@ -10,6 +10,8 @@ import sys
 import random
 import time
 import configfile as CONFIG
+import numpy as np
+import math
 
 # Create the logger
 logger = logging.getLogger()
@@ -42,6 +44,8 @@ BLANK = 'BLANK'
 
 SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
+
+RANDOM_ALBUMS_TO_PLAY = CONFIG.RANDOM_ALBUMS_TO_PLAY
 
 """
 This is used to deal with hardware duplicate button pushes and RF bleed between GPIO pins.
@@ -288,6 +292,96 @@ def next_different_directory(file_paths, index):
     return 0  # No different directory found after the given index
 
 
+"""
+    pulls a random RFID out of the database
+"""
+def get_random_rfid_value(dataframe):
+    
+    rfid = BLANK
+    
+    while rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+        random_index = np.random.choice(dataframe.index)
+        rfid = dataframe.loc[random_index, 'rfid']
+    
+    #print(f'Found rfid: {rfid}')
+    return rfid
+
+
+
+
+def list_folders_in_order(dataframe):
+    return dataframe['rfid'].sort_values().tolist()
+
+
+"""
+Finds a given value in a given column of the DB and returns the value from another column in that row.
+
+    search_column - The column header for the field to search.
+    search_term - The term to search for in the search column
+    result_column - The name of the column from which to return a result
+
+returns the value from column result_column in the row where search_term was found in search_column
+"""
+def lookup_field_by_field(df, search_column, search_term, result_column):
+    # Get the value to look up
+    #value_to_lookup = 2
+    # Check if the value is found in the DataFrame
+    search_term_string = str(search_term)
+    
+    if search_term_string in df[search_column].values:
+    #if value_to_lookup in df["rfid"]:
+        # Find the row where the value is located
+        
+        
+        row_index = df[df[search_column] == search_term_string].index[0]
+        # Get the value in the corresponding column
+        result_value = df.loc[row_index, result_column]
+        # Print the value
+        
+        #logger.debug(f'Found {result_column}: {result_value}s')
+        return result_value
+    else:
+        #didn't find that RFID in the sheet
+        logger.warning(f'The value {search_term} was not found in the column {search_column}.')
+        return 0
+
+
+
+
+def play_random_albums():
+    global DB, RANDOM_ALBUMS_TO_PLAY
+    
+    album_rfid_list = []
+    
+    
+    while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+        ## get another album
+        rfid = get_random_rfid_value(DB)
+        labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
+        if 'random' in labels and rfid not in album_rfid_list:
+            album_rfid_list.append(rfid)
+        else:
+            print("Found a non random album.")
+
+    album_folder_list = []
+
+    for rfid in album_rfid_list:
+        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid, 'folder')
+        logger.debug(f'Attemptting to load album: {album_folder_name}...')
+
+        if album_folder_name != 0:
+            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+            album_folder_list.append(album_folder)
+        
+    tracks = get_tracks(album_folder_list, False)
+    if (len(tracks) > 0):
+        logger.debug (f'Album has tracks. Playing...')
+        #aaplayer.play_tracks(tracks, False )
+    else:
+        logger.warning (f'No tracks found for folder {album_folder}.')
+
+    return tracks
+    
 
 def main():
     global DB, APP_RUNNING
@@ -295,6 +389,22 @@ def main():
     #try:
     # Load the database of RFID tags and their matching albums
     DB = load_database(False)
+    
+    #print(list_folders_in_order(DB))
+    
+    for item in play_random_albums():
+        print(item)
+    #print (play_random_albums())
+    
+    #i=0
+    #while i < 100: 
+        
+    #    get_random_folder_value(DB)
+    #    i = i+1
+    
+    exit()
+ 
+""" 
     
     label_album_folder_list = get_albums_for_label("liverock", False)
     
@@ -306,25 +416,27 @@ def main():
     for song in tracks:
         print("song: " + song)
 
-    logger.info("Starting button monitor!")
-
+ logger.info("Starting button monitor!")
+"""   
 
 
 #    for song in tracks:
 #        print(song)
         
+        
+        
     
-    CURRENT_INDEX = 16
-    print()
-    print("Current Song: " + tracks[CURRENT_INDEX])
+    #CURRENT_INDEX = 16
+    #print()
+    #print("Current Song: " + tracks[CURRENT_INDEX])
     
-    print("Next Song: " + tracks[next_different_directory(tracks,CURRENT_INDEX)])
+    #print("Next Song: " + tracks[next_different_directory(tracks,CURRENT_INDEX)])
 
-    print("\n\n")
+    #print("\n\n")
     
 
     #start_button_controls()
-    exit()
+    #exit()
 
 """
     while True:
@@ -335,7 +447,7 @@ def main():
 
     logger.info("Cleaning up!")
 
-   # button16.close()
+   #    button16.close()
 #    button15.close()
 #    button13.close()
 
