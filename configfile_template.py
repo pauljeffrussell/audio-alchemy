@@ -43,6 +43,16 @@ STOP_AND_RELOAD_DB = "750150895668"
 ## You'll want to replace this with whatever RFID you use to kill the app.
 SHUT_DOWN_APP = "344226340374"
 
+
+## This is an RFID for the object that tells the player to select random albums 
+## labeled with 'random' and play them.
+PLAY_RANDOM_ALBUMS = "824276459135"
+                      
+
+## this is the number of random albums to play when the PLAY_RANDOM_ALBUMS 
+## command card is used
+RANDOM_ALBUMS_TO_PLAY = 5
+
 ## This is where the log file will be written. If you're running the 
 ## app at startup this is how you'll find out what's happening
 #LOG_FILE_LOCATION = "/home/matt/dev/zzlog_file.log"

@@ -14,8 +14,8 @@ import random
 import time
 import configfile as CONFIG
 import requests
-import requests
 import subprocess
+import numpy as np
 from dateutil.parser import parse
 
 
@@ -72,6 +72,18 @@ STOP_AND_RELOAD_DB = CONFIG.STOP_AND_RELOAD_DB
 Shuts down the application and exits.
 """
 SHUT_DOWN_APP = CONFIG.SHUT_DOWN_APP
+
+
+"""
+Command card for playing random albums
+"""
+PLAY_RANDOM_ALBUMS = CONFIG.PLAY_RANDOM_ALBUMS
+
+
+"""
+The number of albums to play with the PLAY_RANDOM_ALBUMS command card
+"""
+RANDOM_ALBUMS_TO_PLAY = CONFIG.RANDOM_ALBUMS_TO_PLAY
 
 """
 Tells the player to keep playing continuously. It will 
@@ -274,6 +286,10 @@ def command_card_handler(rfid_code):
         logger.debug('Read RFID to shutdown application')
         APP_RUNNING = False
         return True
+    elif (command_code == PLAY_RANDOM_ALBUMS ):
+        logger.debug('Read RFID to play random albums')
+        play_random_albums()
+        return True 
     else:
         return False
     
@@ -451,6 +467,61 @@ def get_tracks(folders, shuffle_tracks):
     return all_tracks   
 
 
+"""
+    Gets CONFIG.RANDOM_ALBUMS_TO_PLAY from the DB as long as they are labeled with 
+    'random' and the plays them.
+"""
+def play_random_albums():
+    global DB, RANDOM_ALBUMS_TO_PLAY
+    
+    album_rfid_list = []
+    
+    
+    while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+        ## get another album
+        rfid = get_random_rfid_value()
+        labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
+        if 'random' in labels and rfid not in album_rfid_list:
+            album_rfid_list.append(rfid)
+        else:
+            print("Found a non random album.")
+
+    album_folder_list = []
+
+    for rfid in album_rfid_list:
+        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid, 'folder')
+        logger.debug(f'Attemptting to load album: {album_folder_name}...')
+
+        if album_folder_name != 0:
+            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+            album_folder_list.append(album_folder)
+        
+    tracks = get_tracks(album_folder_list, False)
+    if (len(tracks) > 0):
+        logger.debug (f'Album has tracks. Playing...')
+        aaplayer.play_tracks(tracks, False)
+    else:
+        logger.warning (f'No tracks found for folder {album_folder}.')
+
+    return tracks
+
+"""
+    pulls a random RFID out of the database
+"""
+def get_random_rfid_value():
+    global DB
+    rfid = BLANK
+    
+    while rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+        random_index = np.random.choice(DB.index)
+        rfid = DB.loc[random_index, 'rfid']
+    
+    #print(f'Found rfid: {rfid}')
+    return rfid
+
+
+
+
 
 def handle_rfid_read(rfid_code):
     global DB
@@ -494,16 +565,22 @@ def handle_rfid_read(rfid_code):
         album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
         logger.debug(f'Attemptting to play album: {album_folder_name}...')
 
-        album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
-            
-        tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
 
-        if (len(tracks) > 0):
-            logger.debug (f'Album has tracks. Playing...')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+        if album_folder_name != 0:
+
+            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+        
+        
+            tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
+
+            if (len(tracks) > 0):
+                logger.debug (f'Album has tracks. Playing...')
+                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+            else:
+                logger.warning (f'No tracks found for folder {album_folder}.')    
         else:
-            logger.warning (f'No tracks found for folder {album_folder}.')    
-
+            logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
+            
       
         
         
