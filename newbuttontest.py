@@ -295,15 +295,16 @@ def next_different_directory(file_paths, index):
 """
     pulls a random RFID out of the database
 """
-def get_random_rfid_value(dataframe):
-    
+def get_random_rfid_value():
+    global DB
     rfid = BLANK
     
-    while rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
-        random_index = np.random.choice(dataframe.index)
-        rfid = dataframe.loc[random_index, 'rfid']
     
-    #print(f'Found rfid: {rfid}')
+    
+    while rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+        random_index = np.random.choice(DB.index)
+        rfid = DB.loc[random_index, 'rfid']
+        print(f'Found rfid: {rfid}')
     return rfid
 
 
@@ -351,17 +352,25 @@ def lookup_field_by_field(df, search_column, search_term, result_column):
 def play_random_albums():
     global DB, RANDOM_ALBUMS_TO_PLAY
     
+    
+    logger.debug(f'Starting play_random_albums()')
     album_rfid_list = []
     
     
     while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+        logger.debug(f'Looking for an rfid...') 
         ## get another album
-        rfid = get_random_rfid_value(DB)
-        labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
-        if 'random' in labels and rfid not in album_rfid_list:
+        rfid = get_random_rfid_value()
+        logger.debug(f'Past getting rfid...') 
+        
+        exclude_from_random = lookup_field_by_field(DB, 'rfid', rfid, 'exclude_from_random')
+        if exclude_from_random == 1:
+            logger.debug(f'Found a album marked for skipping random selection.". Skipping...')
+        elif rfid not in album_rfid_list:
+            logger.debug(f'Appending rfid {rfid}')
             album_rfid_list.append(rfid)
         else:
-            print("Found a non random album.")
+             logger.debug(f'Found a rfid already added to the list. Skipping...')
 
     album_folder_list = []
 
