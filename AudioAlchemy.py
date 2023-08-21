@@ -85,6 +85,13 @@ The number of albums to play with the PLAY_RANDOM_ALBUMS command card
 """
 RANDOM_ALBUMS_TO_PLAY = CONFIG.RANDOM_ALBUMS_TO_PLAY
 
+
+"""
+Command card to shuffle all songs in the current track list
+"""
+SHUFFLE_CURRENT_SONGS = CONFIG.SHUFFLE_CURRENT_SONGS
+
+
 """
 Tells the player to keep playing continuously. It will 
 """
@@ -109,6 +116,12 @@ LAST_BUTTON_TIME = 0
 Track if the last button push was to skip to the next album
 """
 LAST_BUTTON_HELD = False
+
+
+"""
+Set to true when the current album has been shuffled using a card or holding the play button
+"""
+CURRENT_ALBUM_SHUFFLED = False
 
 
 def my_interrupt_handler(channel):
@@ -281,6 +294,7 @@ def command_card_handler(rfid_code):
         DB = load_database(True)
         aaplayer.shutdown_player()
         aaplayer.startup()
+        CURRENT_ALBUM_SHUFFLED = False
         return True
     elif (command_code == SHUT_DOWN_APP ):
         logger.debug('Read RFID to shutdown application')
@@ -288,7 +302,13 @@ def command_card_handler(rfid_code):
         return True
     elif (command_code == PLAY_RANDOM_ALBUMS ):
         logger.debug('Read RFID to play random albums')
-        play_random_albums()
+        aaplayer.play_random_albums()
+        CURRENT_ALBUM_SHUFFLED = False
+        return True 
+    elif (command_code == SHUFFLE_CURRENT_SONGS):
+        logger.debug('Read RFID to play random albums')
+        aaplayer.shuffle_current_songs()
+        CURRENT_ALBUM_SHUFFLED = True
         return True 
     else:
         return False
@@ -477,14 +497,31 @@ def play_random_albums():
     album_rfid_list = []
     
     
-    while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+    """while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
         ## get another album
         rfid = get_random_rfid_value()
         labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
         if 'random' in labels and rfid not in album_rfid_list:
             album_rfid_list.append(rfid)
         else:
-            print("Found a non random album.")
+            print("Found a non random album.")"""
+    
+    ## replaced the above code to skip albums labled norandom instead of 
+    ## requiring the albums be labled with "random"
+    while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+        logger.debug(f'Looking for an rfid...') 
+        ## get another album
+        rfid = get_random_rfid_value()
+        logger.debug(f'Past getting rfid...') 
+        
+        exclude_from_random = lookup_field_by_field(DB, 'rfid', rfid, 'exclude_from_random')
+        if exclude_from_random == 1:
+            logger.debug(f'Found a album marked for skipping random selection.". Skipping...')
+        elif rfid not in album_rfid_list:
+            logger.debug(f'Appending rfid {rfid}')
+            album_rfid_list.append(rfid)
+        else:
+             logger.debug(f'Found a rfid already added to the list. Skipping...')
 
     album_folder_list = []
 
@@ -504,7 +541,50 @@ def play_random_albums():
         logger.warning (f'No tracks found for folder {album_folder}.')
 
     return tracks
+    
+    
+"""def play_random_albums():
+    global DB, RANDOM_ALBUMS_TO_PLAY
+    
+    
+    logger.debug(f'Starting play_random_albums()')
+    album_rfid_list = []
+    
+    
+    while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+        #logger.debug(f'Looking for an rfid...') 
+        ## get another album
+        rfid = get_random_rfid_value()
+        #logger.debug(f'Past getting rfid...') 
+        
+        labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
+        if 'norandom' in labels:
+            logger.debug(f'Found a album labled "norandom". Skipping...')
+        elif rfid not in album_rfid_list:
+            logger.debug(f'Appending rfid {rfid}')
+            album_rfid_list.append(rfid)
+        else:
+             logger.debug(f'Found a rfid already added to the list. Skipping...')
 
+    album_folder_list = []
+
+    for rfid in album_rfid_list:
+        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid, 'folder')
+        logger.debug(f'Attemptting to load album: {album_folder_name}...')
+
+        if album_folder_name != 0:
+            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+            album_folder_list.append(album_folder)
+        
+    tracks = get_tracks(album_folder_list, False)
+    if (len(tracks) > 0):
+        logger.debug (f'Album has tracks. Playing...')
+        #aaplayer.play_tracks(tracks, False )
+    else:
+        logger.warning (f'No tracks found for folder {album_folder}.')
+
+    return tracks
+"""
 """
     pulls a random RFID out of the database
 """
@@ -550,6 +630,7 @@ def handle_rfid_read(rfid_code):
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
             aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )   
+            CURRENT_ALBUM_SHUFFLED = False
     
     elif (label_card == 1):
         #this card is a label card. It is intended to play all of the albums with a matching lable.
@@ -560,6 +641,7 @@ def handle_rfid_read(rfid_code):
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
             aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+            CURRENT_ALBUM_SHUFFLED = False
     
     else:
         album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
@@ -576,6 +658,7 @@ def handle_rfid_read(rfid_code):
             if (len(tracks) > 0):
                 logger.debug (f'Album has tracks. Playing...')
                 aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+                CURRENT_ALBUM_SHUFFLED = False
             else:
                 logger.warning (f'No tracks found for folder {album_folder}.')    
         else:
@@ -726,6 +809,18 @@ def button_backward_held_callback(channel):
     logger.info("SKIP TO PREVIOUS ALBUM!")
     aaplayer.jump_to_previous_album()
     
+def button_shuffle_current_songs(channel):
+    global LAST_BUTTON_HELD, CURRENT_ALBUM_SHUFFLED
+    LAST_BUTTON_HELD = True
+    
+    if CURRENT_ALBUM_SHUFFLED == False:
+        logger.info("Suffle Current tracks!")
+        aaplayer.shuffle_current_songs()
+        CURRENT_ALBUM_SHUFFLED = True
+    else:
+        logger.info("Unshuffle current tracks!")
+        aaplayer.unshuffle_current_songs()
+        CURRENT_ALBUM_SHUFFLED = False
     
 
 def start_rfid_reader():
@@ -766,6 +861,8 @@ def start_button_controls():
     
     ## Play Pause Button
     button15.when_released = button_callback_15
+    button15.hold_time = BUTTON_HOLD_DURATION
+    button15.when_held = button_shuffle_current_songs
     
     ## Next Button
     button13.when_released = button_callback_13

@@ -248,6 +248,30 @@ def jump_to_previous_album():
     jump_to_track(0)   # No different directory found after the given index
 
 
+
+def shuffle_current_songs():
+    global mp3_files, current_index
+    
+    pygame.mixer.music.stop()
+    
+    random.shuffle(mp3_files)
+    
+    current_index = 0
+    play_current_track()
+
+def unshuffle_current_songs():
+    global mp3_files, current_index
+    
+    pygame.mixer.music.stop()
+    
+    mp3_files.sort()
+    
+    current_index = 0
+    play_current_track()
+
+
+
+
 def get_index_of_first_track(album_directory):
     global mp3_files
     
@@ -281,8 +305,9 @@ def pause_track():
     logging.info('Pausing album.')
 
 def play_current_track():
-    global mp3_files, current_index
+    global mp3_files, current_index, MUSIC_PAUSED
     
+    MUSIC_PAUSED = 0
     current_track = mp3_files[current_index]
     logging.info(f'Starting: {current_track}')
     pygame.mixer.music.load(current_track)
