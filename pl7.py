@@ -14,8 +14,13 @@ import time
 #mp3_dir = "testshort"
 
 # Get a list of all the MP3 files in the directory
-mp3_files = []#[os.path.join(mp3_dir, f) for f in os.listdir(mp3_dir) if f.endswith('.mp3')]
+TRACK_LIST = []#[os.path.join(mp3_dir, f) for f in os.listdir(mp3_dir) if f.endswith('.mp3')]
 # Sort the list of MP3 files alphabetically
+
+## This is the same as TRACK_LIST when the album is first loaded
+## but you can shuffle the album which reoders TRACK_LIST
+## We keep this list so we can go back to the unshuffled list
+TRACK_LIST_ORIGINAL_ORDER = []
 
 
 END_TRACK_INDEX = 0
@@ -40,6 +45,11 @@ ALBUM_REPEAT = False
 SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
 DEVICE_NAME = 'Audio Adapter (Unitek Y-247A) Mono'
+
+
+## keeps track of weather or not the tracks have all been played.
+## This is True after the tracks have played, until someone starts playing them again.
+#TRACKS_COMPLETE = False
 
 
 # Initialize the current index and current track variables
@@ -77,7 +87,12 @@ def startup():
             time.sleep(5)
 
 
-
+def is_playing():
+    if (MUSIC_PAUSED == 1):
+        return False
+    else:
+        return True
+     
     
 def keep_playing():
     global MUSIC_PAUSED
@@ -95,8 +110,9 @@ def keep_playing():
         next_track()
     
 
-def play_folder(folder_path, shuffle, repeat):
-    global mp3_files, END_TRACK_INDEX, current_index, current_track, mp3_dir, ALBUM_LOADED, MUSIC_PAUSED, SUPPORTED_EXTENSIONS, ALBUM_REPEAT
+""" removed 2023-08-25. Looks like this was replaced by play_tracks a while back.
+    def play_folder(folder_path, shuffle, repeat):
+    global TRACK_LIST, END_TRACK_INDEX, current_index, current_track, mp3_dir, ALBUM_LOADED, MUSIC_PAUSED, SUPPORTED_EXTENSIONS, ALBUM_REPEAT
 
     
 
@@ -126,27 +142,27 @@ def play_folder(folder_path, shuffle, repeat):
 
     # Get a list of all the MP3 files in the directory
     #valid_extensions = ['.mp3', '.wav', '.ogg']
-    mp3_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.splitext(f)[1] in SUPPORTED_EXTENSIONS]
+    TRACK_LIST = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.splitext(f)[1] in SUPPORTED_EXTENSIONS]
     
     
     # this line ysed to implode because of .DS_local files appearing in directories.
-    #mp3_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) ]
+    #TRACK_LIST = [os.path.join(folder_path, f) for f in os.listdir(folder_path) ]
 
-    # mp3_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.ogg')]
+    # TRACK_LIST = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.ogg')]
     
     if shuffle == True:
-        random.shuffle(mp3_files)
+        random.shuffle(TRACK_LIST)
     else:
         # Sort the list of MP3 files alphabetically
-        mp3_files.sort()
+        TRACK_LIST.sort()
 
-    END_TRACK_INDEX = len(mp3_files)
+    END_TRACK_INDEX = len(TRACK_LIST)
     
     print("total tracks ", END_TRACK_INDEX)
     
     # Play the first track
     #current_index += 1
-    current_track = mp3_files[current_index]
+    current_track = TRACK_LIST[current_index]
     # Load the current track
     
     play_current_track()
@@ -157,11 +173,11 @@ def play_folder(folder_path, shuffle, repeat):
     ALBUM_LOADED = True
     #ALBUM_IN_PROGRESS = True
     print ("End track index", END_TRACK_INDEX)
-    
+"""
     
     
 def play_tracks(tracks, repeat):
-    global mp3_files, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT
+    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT
 
 
     if ALBUM_LOADED:
@@ -178,12 +194,13 @@ def play_tracks(tracks, repeat):
     current_index = 0
     
     # make the list of tracks available to the entire player
-    mp3_files = tracks
-    END_TRACK_INDEX = len(mp3_files)
+    TRACK_LIST = tracks
+    TRACKS_ORIGINAL_ORDER = tracks
+    END_TRACK_INDEX = len(TRACK_LIST)
     logging.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
     
     # Play the first track
-    #current_track = mp3_files[current_index]
+    #current_track = TRACK_LIST[current_index]
     play_current_track()
 
     MUSIC_PAUSED = 0
@@ -191,10 +208,10 @@ def play_tracks(tracks, repeat):
     
     
 def jump_to_next_album():
-    global mp3_files, current_index
+    global TRACK_LIST, current_index
     
     index = current_index
-    file_paths = mp3_files
+    file_paths = TRACK_LIST
     
     current_directory = os.path.dirname(file_paths[index])
     next_index = index + 1
@@ -211,10 +228,10 @@ def jump_to_next_album():
 
 
 def jump_to_previous_album():
-    global mp3_files, current_index
+    global TRACK_LIST, current_index
     
     index = current_index
-    file_paths = mp3_files
+    file_paths = TRACK_LIST
     
     current_directory = os.path.dirname(file_paths[index])
     
@@ -250,33 +267,47 @@ def jump_to_previous_album():
 
 
 def shuffle_current_songs():
-    global mp3_files, current_index
+    global TRACK_LIST, current_index
     
     pygame.mixer.music.stop()
     
-    random.shuffle(mp3_files)
+    random.shuffle(TRACK_LIST)
     
     current_index = 0
     play_current_track()
 
 def unshuffle_current_songs():
-    global mp3_files, current_index
+    global TRACK_LIST, current_index, TRACK_LIST_ORIGINAL_ORDER
     
     pygame.mixer.music.stop()
     
-    mp3_files.sort()
+    ## we put back the original order. Some playlists are not alphabetically ordered.
+    ## for example the play 5 random albums are in order per album, but the albums aren't in a specific order
+    ## moreover, of you sort that list, you're going to get albums overlapping each other.
+    TRACK_LIST = TRACK_LIST_ORIGINAL_ORDER
     
     current_index = 0
     play_current_track()
 
 
+## picks a random track in the album and plays the track in order from there. 
+def play_in_order_from_random_track():
+    
+    try:
+        new_track_index = random.randint(0, len(TRACK_LIST) - 1)
+        logging.debug(f'Jumping to track: {new_track_index} and continuing to play in order...')
+        jump_to_track(new_track_index)
+        ALBUM_REPEAT = True
+    except:
+        logging.error("Unable to jump to a random track. There was a problem picking a random index.")
+        
 
 
 def get_index_of_first_track(album_directory):
-    global mp3_files
+    global TRACK_LIST
     
-    for index in range(len(mp3_files)):
-        if os.path.dirname(mp3_files[index]) == album_directory:
+    for index in range(len(TRACK_LIST)):
+        if os.path.dirname(TRACK_LIST[index]) == album_directory:
             return index
     
     return 0
@@ -305,17 +336,17 @@ def pause_track():
     logging.info('Pausing album.')
 
 def play_current_track():
-    global mp3_files, current_index, MUSIC_PAUSED
+    global TRACK_LIST, current_index, MUSIC_PAUSED
     
     MUSIC_PAUSED = 0
-    current_track = mp3_files[current_index]
+    current_track = TRACK_LIST[current_index]
     logging.info(f'Starting: {current_track}')
     pygame.mixer.music.load(current_track)
     pygame.mixer.music.play()
     
 
 def jump_to_track(track_index):
-    global current_index, mp3_files, MUSIC_PAUSED
+    global current_index, TRACK_LIST, MUSIC_PAUSED
   
     MUSIC_PAUSED = 0
     # Stop the mixer
@@ -329,7 +360,7 @@ def jump_to_track(track_index):
 
 
 def next_track():
-    global current_index, mp3_files, MUSIC_PAUSED, ALBUM_REPEAT
+    global current_index, TRACK_LIST, MUSIC_PAUSED, ALBUM_REPEAT
   
     MUSIC_PAUSED = 0
     # Stop the mixer
@@ -337,7 +368,7 @@ def next_track():
     
     # Get the next index
     current_index += 1
-    if (ALBUM_REPEAT == False and current_index >= len(mp3_files)):
+    if (ALBUM_REPEAT == False and current_index >= len(TRACK_LIST)):
         current_index = 0
         play_current_track()
         pause_track()
@@ -348,7 +379,7 @@ def next_track():
 
 
 def prev_track():
-    global current_index, mp3_files, MUSIC_PAUSED
+    global current_index, TRACK_LIST, MUSIC_PAUSED
   
     MUSIC_PAUSED = 0
     # Stop the mixer
@@ -357,10 +388,10 @@ def prev_track():
     # Get the previous index
     current_index -= 1
     if current_index < 0:
-        current_index = len(mp3_files) - 1
+        current_index = len(TRACK_LIST) - 1
     
     # Load and play the previous track
-    current_track = mp3_files[current_index]
+    current_track = TRACK_LIST[current_index]
     play_current_track()
  
 

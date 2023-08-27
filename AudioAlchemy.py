@@ -17,7 +17,11 @@ import requests
 import subprocess
 import numpy as np
 from dateutil.parser import parse
-
+from datetime import datetime
+import smtplib
+from email.message import EmailMessage
+from email.header import Header
+from email.mime.text import MIMEText
 
 # Create the logger
 logger = logging.getLogger()
@@ -50,9 +54,8 @@ DB = pd.DataFrame()
 
 APP_RUNNING = True
 
-DB_CACHE_FOLDER = CONFIG.DB_CACHE_LOCATION
 
-DB_CACHE = DB_CACHE_FOLDER + "dbcache.csv"
+DB_CACHE = CONFIG.DB_CACHE_LOCATION + "dbcache.csv"
 
 #### THESE ARE NEW
 BLANK = 'BLANK'
@@ -62,50 +65,6 @@ SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 BUTTON_HOLD_DURATION = CONFIG.BUTTON_HOLD_DURATION
 
 #### COMMANDS
-
-"""
-Stops all playback, resets the player, reloads the database
-"""
-STOP_AND_RELOAD_DB = CONFIG.STOP_AND_RELOAD_DB 
-
-"""
-Shuts down the application and exits.
-"""
-SHUT_DOWN_APP = CONFIG.SHUT_DOWN_APP
-
-
-"""
-Command card for playing random albums
-"""
-PLAY_RANDOM_ALBUMS = CONFIG.PLAY_RANDOM_ALBUMS
-
-
-"""
-The number of albums to play with the PLAY_RANDOM_ALBUMS command card
-"""
-RANDOM_ALBUMS_TO_PLAY = CONFIG.RANDOM_ALBUMS_TO_PLAY
-
-
-"""
-Command card to shuffle all songs in the current track list
-"""
-SHUFFLE_CURRENT_SONGS = CONFIG.SHUFFLE_CURRENT_SONGS
-
-
-"""
-Tells the player to keep playing continuously. It will 
-"""
-PLAYBACK_CONTINUOUS = "12345"
-
-"""
-Tells the player to stop at the end of the album
-"""
-PLAYBACK_STOP_AT_ALBUM_END = "12345"
-
-"""
-Tells the player to shuffel the current playlist
-"""
-PLAYBACK_SHUFFEL_ALBUM = "12345"
 
 """
 This is used to deal with hardware duplicate button pushes and RF bleed between GPIO pins.
@@ -123,6 +82,35 @@ Set to true when the current album has been shuffled using a card or holding the
 """
 CURRENT_ALBUM_SHUFFLED = False
 
+"""
+THE CURRENT ALBUM OF THE DAY DATE.
+We'll use this as a seed for pulling the album of the day.
+"""
+ALBUM_OF_THE_DAY_DATE = 0
+
+"""
+Matches the format of the Album of the day date. 
+This value is sent when the email goes out. 
+"""
+ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = 0
+
+
+"""
+The current album of the day rfid
+"""
+ALBUM_OF_THE_DAY_RFID = 0 
+
+
+
+## This is the counter to see roughly how long has 
+## past since the album of the day was sent
+COUNTER_FOR_ALBUM_OF_THE_DAY = 0
+
+## I want to check every hour so every 3600 seconds
+## we'll check if it's time yet
+CHECK_ALBUM_OF_THE_DAY_COUNT = 36000
+
+
 
 def my_interrupt_handler(channel):
     global LAST_BUTTON_TIME    
@@ -139,36 +127,7 @@ def my_interrupt_handler(channel):
         return False
 
 
-"""def load_database():
-    
-    
-    #At app start look for the cached DB
-    
-    #if you find it load it.
-    
-    #if you don't find it, load it from the web and save it
-    
-    
-    
-    
-    DB_LOADED = False
-    
-    while not DB_LOADED:
-        try:
-            logging.debug("Attempting to load the DB from the internet.")
-            db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
 
-            logger.info(f'DB URL: {db_url}s')
-            # Read the spreadsheet
-            
-            loaded_db = pd.read_csv(db_url)
-            logging.debug("SUCCESS! The mixer loaded.")
-            DB_LOADED = True
-            return loaded_db
-        except:
-            logging.debug("DB load failed. Retrying in 3 seconds.")
-            time.sleep(3)
-"""
 def load_database(LOAD_FROM_WEB):
     global DB
     
@@ -286,29 +245,33 @@ Checks to see if it recieved a command card. If it did, it executes the command 
     
 """
 def command_card_handler(rfid_code):
-    global DB, STOP_AND_RELOAD_DB, SHUT_DOWN_APP, APP_RUNNING
+    global DB, APP_RUNNING
     command_code = str(rfid_code)
     
-    if (command_code == STOP_AND_RELOAD_DB ):
+    if (command_code == CONFIG.COMMAND_PLAY_ALBUM_OF_THE_DAY):
+        logger.debug('Playing Album of the day.')
+        play_album_of_the_day()
+        CURRENT_ALBUM_SHUFFLED = False
+        return True 
+    elif (command_code == CONFIG.COMMAND_STOP_AND_RELOAD_DB ):
         logger.debug('Executing Command Card Stop Player & Reload Database')
         DB = load_database(True)
         aaplayer.shutdown_player()
         aaplayer.startup()
         CURRENT_ALBUM_SHUFFLED = False
         return True
-    elif (command_code == SHUT_DOWN_APP ):
+    elif (command_code == CONFIG.COMMAND_SHUT_DOWN_APP ):
         logger.debug('Read RFID to shutdown application')
         APP_RUNNING = False
         return True
-    elif (command_code == PLAY_RANDOM_ALBUMS ):
+    elif (command_code == CONFIG.COMMAND_PLAY_RANDOM_ALBUMS ):
         logger.debug('Read RFID to play random albums')
-        aaplayer.play_random_albums()
+        play_random_albums()
         CURRENT_ALBUM_SHUFFLED = False
         return True 
-    elif (command_code == SHUFFLE_CURRENT_SONGS):
-        logger.debug('Read RFID to play random albums')
-        aaplayer.shuffle_current_songs()
-        CURRENT_ALBUM_SHUFFLED = True
+    elif (command_code == CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK):
+        logger.debug('Read RFID to play in order from a random track')
+        aaplayer.play_in_order_from_random_track()
         return True 
     else:
         return False
@@ -492,12 +455,12 @@ def get_tracks(folders, shuffle_tracks):
     'random' and the plays them.
 """
 def play_random_albums():
-    global DB, RANDOM_ALBUMS_TO_PLAY
+    global DB
     
     album_rfid_list = []
     
     
-    """while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+    """while len(album_rfid_list) <= CONFIG.RANDOM_ALBUMS_TO_PLAY -1:
         ## get another album
         rfid = get_random_rfid_value()
         labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
@@ -508,7 +471,7 @@ def play_random_albums():
     
     ## replaced the above code to skip albums labled norandom instead of 
     ## requiring the albums be labled with "random"
-    while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
+    while len(album_rfid_list) <= CONFIG.RANDOM_ALBUMS_TO_PLAY -1:
         logger.debug(f'Looking for an rfid...') 
         ## get another album
         rfid = get_random_rfid_value()
@@ -541,136 +504,42 @@ def play_random_albums():
         logger.warning (f'No tracks found for folder {album_folder}.')
 
     return tracks
-    
-    
-"""def play_random_albums():
-    global DB, RANDOM_ALBUMS_TO_PLAY
-    
-    
-    logger.debug(f'Starting play_random_albums()')
-    album_rfid_list = []
-    
-    
-    while len(album_rfid_list) <= RANDOM_ALBUMS_TO_PLAY -1:
-        #logger.debug(f'Looking for an rfid...') 
-        ## get another album
-        rfid = get_random_rfid_value()
-        #logger.debug(f'Past getting rfid...') 
-        
-        labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
-        if 'norandom' in labels:
-            logger.debug(f'Found a album labled "norandom". Skipping...')
-        elif rfid not in album_rfid_list:
-            logger.debug(f'Appending rfid {rfid}')
-            album_rfid_list.append(rfid)
-        else:
-             logger.debug(f'Found a rfid already added to the list. Skipping...')
 
-    album_folder_list = []
 
-    for rfid in album_rfid_list:
-        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid, 'folder')
-        logger.debug(f'Attemptting to load album: {album_folder_name}...')
 
-        if album_folder_name != 0:
-            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
-            album_folder_list.append(album_folder)
-        
-    tracks = get_tracks(album_folder_list, False)
+
+
+def play_album_of_the_day():
+    global DB, ALBUM_OF_THE_DAY_RFID
+    
+    #found_rfid = get_album_of_the_day_rfid()
+    
+    set_album_of_the_day_date_and_rfid()
+    
+    album_folder_name = lookup_field_by_field(DB, 'rfid', ALBUM_OF_THE_DAY_RFID, 'folder')
+    logger.debug(f'Attemptting to load album: {album_folder_name}...')
+    album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+
+    
+    tracks = get_tracks([album_folder], False)
     if (len(tracks) > 0):
+        foo = 3
         logger.debug (f'Album has tracks. Playing...')
-        #aaplayer.play_tracks(tracks, False )
+        aaplayer.play_tracks(tracks, False )
     else:
         logger.warning (f'No tracks found for folder {album_folder}.')
 
     return tracks
-"""
-"""
-    pulls a random RFID out of the database
-"""
-def get_random_rfid_value():
-    global DB
-    rfid = BLANK
     
-    while rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
-        random_index = np.random.choice(DB.index)
-        rfid = DB.loc[random_index, 'rfid']
-    
-    #print(f'Found rfid: {rfid}')
-    return rfid
 
 
-
-
-
-def handle_rfid_read(rfid_code):
-    global DB
-    
-    
-    genre_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre_card')
-
-    label_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')
-    #except:
-    #    logger.warning("Could not load genre or label card on RFID read.")
-    
-    if (command_card_handler(rfid_code) == True):
-        ## You found a command card. It's been executed. Don't do anything else.
-        logger.debug(f'Completed command card: {rfid_code}...')
-        
-    elif (genre_card == 1):
-        ## this card is meant to play a genre instead of a specific album
-        genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre')
-        sub_genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'sub_genre')
-        
-        #get the list of all the folders from this genre
-        genre_album_folder_list = get_albums_for_genre(genre, sub_genre, is_album_shuffle(rfid_code))
-        
-        tracks = get_tracks(genre_album_folder_list, is_song_shuffle(rfid_code))
-        
-        if (len(tracks) > 0):
-            logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )   
-            CURRENT_ALBUM_SHUFFLED = False
-    
-    elif (label_card == 1):
-        #this card is a label card. It is intended to play all of the albums with a matching lable.
-        label = lookup_field_by_field(DB, 'rfid', rfid_code, 'labels')
-        label_album_folder_list = get_albums_for_label(label, is_album_shuffle(rfid_code))
-        tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
-        
-        if (len(tracks) > 0):
-            logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
-            CURRENT_ALBUM_SHUFFLED = False
-    
-    else:
-        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
-        logger.debug(f'Attemptting to play album: {album_folder_name}...')
-
-
-        if album_folder_name != 0:
-
-            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
-        
-        
-            tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
-
-            if (len(tracks) > 0):
-                logger.debug (f'Album has tracks. Playing...')
-                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
-                CURRENT_ALBUM_SHUFFLED = False
-            else:
-                logger.warning (f'No tracks found for folder {album_folder}.')    
-        else:
-            logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
-            
-      
         
         
         
         
 
-          
+""" Commented out 2023-08-22 I'm pretty sure this hasn't been used in months.
+                   
 def handle_rfid_read_old(rfid_code):
     global DB, THREAD_LOCK
     
@@ -701,7 +570,7 @@ def handle_rfid_read_old(rfid_code):
                 logger.warning (f'Folder {album_folder} does not exist.')
                 
              
-"""def handle_rfid_read(rfid_code):
+def handle_rfid_read(rfid_code):
         global DB
         
         #THREAD_LOCK.acquire()
@@ -769,9 +638,7 @@ def last_button_held():
     LAST_BUTTON_HELD = False
     return current_value
     
-    
-          
-         
+           
 def button_callback_16(channel):
     
     # make sure to debounce partial button pushes AND
@@ -780,6 +647,7 @@ def button_callback_16(channel):
         logger.info("Previous Track Button was pushed!")
         aaplayer.prev_track()
 
+
 def button_callback_15(channel):
     
     # make sure to debounce partial button pushes AND
@@ -787,6 +655,7 @@ def button_callback_15(channel):
     if (my_interrupt_handler(channel) and not last_button_held()):
         logger.info("Play/Pause Button was pushed!")
         aaplayer.play_pause_track()
+
     
 def button_callback_13(channel):
     
@@ -823,25 +692,6 @@ def button_shuffle_current_songs(channel):
         CURRENT_ALBUM_SHUFFLED = False
     
 
-def start_rfid_reader():
-    global APP_RUNNING
-    
-    #try:
-    reader = SimpleMFRC522()
-    existing_id = 0
-  
-    while APP_RUNNING:
-        
-        id, text = reader.read()
-        
-        if (existing_id != id):    
-            print("Place a new tag on the reader.")
-            existing_id = id
-            logger.info(f'RFID Read: {id}')
-            #print(text)
-            handle_rfid_read(id)
-
-
 def start_button_controls():
  
     button16 = Button("BOARD16")
@@ -872,17 +722,302 @@ def start_button_controls():
 
 
 
+"""
+    pulls a random RFID out of the database
+"""
+def get_random_rfid_value():
+    global DB
+    rfid = BLANK
+    
+    while rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+        random_index = np.random.choice(DB.index)
+        rfid = DB.loc[random_index, 'rfid']
+    
+    #print(f'Found rfid: {rfid}')
+    return rfid
+
+
+def get_album_of_the_day_seed():
+    return int(datetime.today().strftime('%Y%m%d'))
+
+
+def handle_rfid_read(rfid_code):
+    global DB
+    
+    
+    genre_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre_card')
+
+    label_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')
+    #except:
+    #    logger.warning("Could not load genre or label card on RFID read.")
+    
+    if (command_card_handler(rfid_code) == True):
+        ## You found a command card. It's been executed. Don't do anything else.
+        logger.debug(f'Completed command card: {rfid_code}...')
+        
+    elif (genre_card == 1):
+        ## this card is meant to play a genre instead of a specific album
+        genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre')
+        sub_genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'sub_genre')
+        
+        #get the list of all the folders from this genre
+        genre_album_folder_list = get_albums_for_genre(genre, sub_genre, is_album_shuffle(rfid_code))
+        
+        tracks = get_tracks(genre_album_folder_list, is_song_shuffle(rfid_code))
+        
+        if (len(tracks) > 0):
+            logger.debug (f'Album folder exists. Playing Genre')
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )   
+            CURRENT_ALBUM_SHUFFLED = False
+    
+    elif (label_card == 1):
+        #this card is a label card. It is intended to play all of the albums with a matching lable.
+        label = lookup_field_by_field(DB, 'rfid', rfid_code, 'labels')
+        label_album_folder_list = get_albums_for_label(label, is_album_shuffle(rfid_code))
+        tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
+        
+        if (len(tracks) > 0):
+            logger.debug (f'Album folder exists. Playing Genre')
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+            CURRENT_ALBUM_SHUFFLED = False
+    
+    else:
+        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
+        logger.debug(f'Attemptting to play album: {album_folder_name}...')
+
+
+        if album_folder_name != 0:
+
+            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+        
+        
+            tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
+
+            if (len(tracks) > 0):
+                logger.debug (f'Album has tracks. Playing...')
+                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+                CURRENT_ALBUM_SHUFFLED = False
+            else:
+                logger.warning (f'No tracks found for folder {album_folder}.')    
+        else:
+            logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
+            
+
+""" def set_album_of_the_day_date_and_rfid():
+
+If it's a new day then this funcitons
+
+    1. Sets the global ALBUM_OF_THE_DAY_DATE which is used as a seed for looking up the RFID.
+    2. Sets the global ALBUM_OF_THE_DAY_RFID   
+    3. returns true so we know it's a new day
+
+If it's not a new day it returns false
+            
+            
+This way we can update the DB as much as we want and the album of the 
+day will always be the same after the first time we email or play the 
+album.
+            
+Of course, if we kill the app, then we're starting all over.
+            
+            
+            
+Note: This was the old def get_album_of_the_day_rfid(): 
+
+"""
+def set_album_of_the_day_date_and_rfid():
+    global DB, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID
+    rfid = BLANK
+    
+    #use today's date YYYYMMDD as the seed for pulling random albums
+    # the goal is to get the same answer all day
+    todays_seed = get_album_of_the_day_seed() 
+    logger.debug(f'Looking up album for today: {todays_seed}...')
+    
+    if ALBUM_OF_THE_DAY_DATE == todays_seed:
+        # the date and RFID were already set
+        
+        # return false so they know there's not a new album of the day.
+        return False
+    else:
+            
+        # Set the seed with today's date so we always get the same answer
+        np.random.seed(todays_seed)
+    
+        ## don't use rows with a 1 in the 
+        filtered_df = DB[DB['exclude_from_random'] != 1]
+    
+        ## get a pile of results so at least one of them doesn't get excluded
+        sample_size = min(len(filtered_df), 50)
+    
+        todays_rfid_list = filtered_df.sample(n=sample_size, random_state=todays_seed)['rfid'].tolist()
+    
+
+        #found_rfid = None  # This will store the found rfid value
+
+
+        #check throgh the list of RFIDs for one that is approved
+        for rfid in todays_rfid_list:
+            if rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+                continue
+            else:
+                ALBUM_OF_THE_DAY_RFID = rfid  # Store the rfid that passed the check
+                ALBUM_OF_THE_DAY_DATE = todays_seed # store the current album of the day date/seed
+                return True
+                
+                
+
+
+def check_album_of_the_day_email():
+    global COUNTER_FOR_ALBUM_OF_THE_DAY, CHECK_ALBUM_OF_THE_DAY_COUNT, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE
+
+    #logger.info(f'Checking email of the day... current count: {COUNTER_FOR_ALBUM_OF_THE_DAY}')
+
+    ## first see if it's been long enough
+    if COUNTER_FOR_ALBUM_OF_THE_DAY < CHECK_ALBUM_OF_THE_DAY_COUNT:
+        ## We haven't looped enough times yet 
+        COUNTER_FOR_ALBUM_OF_THE_DAY = COUNTER_FOR_ALBUM_OF_THE_DAY + 1
+    else:
+        ## It's been long enough, lets see if we need to send an email
+        
+        
+        #make sure the album of the day is up to date.
+        set_album_of_the_day_date_and_rfid()
+        
+        
+        #new_seed = get_album_of_the_day_rfid()
+
+        if ALBUM_OF_THE_DAY_LAST_EMAIL_DATE != ALBUM_OF_THE_DAY_DATE:
+            ## We haven't send an email today
+            ## but we don't want to send the email before 4am
+            if is_past_4am():         
+                ## It's a new day and past 4am!!!
+                logger.info(f'New Album of the day available. Seed: {ALBUM_OF_THE_DAY_DATE}')
+                
+                ## let's record that we've now sent an email today
+                ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = ALBUM_OF_THE_DAY_DATE
+                
+                #reset the counter so that we start checking again
+                COUNTER_FOR_ALBUM_OF_THE_DAY = 0
+                
+                # and lets send the email
+                send_album_of_the_day_email(ALBUM_OF_THE_DAY_RFID)
+            else:
+                hour = datetime.now().hour
+                logger.info(f'New Album of the day available. BUT its not 4am yet. Current hour{hour}')
+                COUNTER_FOR_ALBUM_OF_THE_DAY = 0
+
+
+
+def replace_non_strings(variable):
+    if isinstance(variable, str):
+       return variable
+    else:
+        return ""
+       
+def is_past_4am():
+    # Get the current hour
+    current_hour = datetime.now().hour
+    
+    # Check if current hour is past 5 AM
+    return current_hour >= 4
+
+
+def send_album_of_the_day_email(rfid):    
+    
+    logger.info(f'Sending an album of the day email...')
+    
+    
+    album_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Album'))
+    album_folder_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'folder'))
+    artist_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Artist'))
+    album_url = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'url'))
+    
+
+    body = f"""Today's album of the day is:<br><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"""
+    
+    if album_url != "":
+        body = body + f'<a href="{album_url}">'
+    
+    body = body + f"""<b style="font-size: 2em;">{album_name}"""
+    if album_url != "":
+        body = body + f'</a>'
+    
+    if (artist_name != "" or artist_name == "Various Artists"):
+        body = body + "<BR>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by " + artist_name
+        
+    if album_url != "":
+        body = body + f'</a>'
+
+        
+    body = body + f"""</b><BR><BR><BR><BR>
+    <div style="font-size: smaller; color: grey;">Use the hammer to play the album.</div>"""
+    
+    
+    
+    # Email settings
+    SMTP_SERVER = 'smtp.gmail.com'
+    SMTP_PORT = 587
+    SENDER_EMAIL = CONFIG.EMAIL_SENDER_ADDRESS  # Change this to your Gmail
+    SENDER_PASSWORD = CONFIG.EMAIL_SENDER_PASSWORD      # Change this to your password or App Password
+
+    # Create the message
+    msg = EmailMessage()
+    
+    
+    
+    #msg.set_content(f"Today's date is {datetime.now().strftime('%Y-%m-%d')}")
+    
+    msg = MIMEText(body, 'html') 
+    
+    #msg['From'] = Header(f'{CONFIG.EMAIL_SENDER_NAME} <{CONFIG.EMAIL_SENDER_ADDRESS}>', 'utf-8')  # Set sender name here
+    
+                      
+    msg['Subject'] = album_name
+    msg['From'] = CONFIG.EMAIL_SENDER_NAME
+    msg['To'] = CONFIG.EMAIL_SEND_TO  # The receiver's email
+
+    #print("Subject ", msg['Subject'])
+
+    # Send the email
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
+            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+            smtp.send_message(msg)
+            logger.info(f'Email sent successfully!')
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+    
+
+
+
+
+
+
+
 def main():
-    global DB, APP_RUNNING
+    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_SEED
     
     #try:
     # Load the database of RFID tags and their matching albums
     DB = load_database(False)
     
-    #DB['sub_genre'] = DB['sub_genre'].fillna(BLANK)
-    #DB['genre'] = DB['genre'].fillna(BLANK)
-    #DB['folder'] = DB['folder'].fillna(BLANK)
-    #DB['labels'] = DB['labels'].fillna(BLANK)
+    
+    ## the read only OS thinks the date is June 2023 on reboot. In order for 
+    ## album of the day to work properly, you need to fitch the current date
+    ## and set the system time.
+    set_ststem_date()
+
+
+    ## We set this at statup so that we don't send an email
+    ## every time I restart the system
+    #ALBUM_OF_THE_DAY_SEED = get_album_of_the_day_seed()
+
+
+
     
     columns_to_print = ['folder', 'genre', 'sub_genre']
     print(DB[columns_to_print])
@@ -904,7 +1039,28 @@ def main():
     aaplayer.startup()
 
     reader = SimpleMFRC522()
-    existing_id = 0
+    
+    ## The RFID the app thinks is current. This is reset to 0 if the 
+    ## Reader doesn't see this card for some period. After it has stopped playing. 
+    CURRRENT_RFID = 0
+    
+    ## A counter of the number of times the loop below happened
+    ## when there was no card and the player wasn't playing
+    COUNT_SINCE_CARD_REMOVED = 0
+    
+    LOOP_SLEEP_DURATION = .1
+    
+    
+    ## The COUNT_SINCE_CARD_REMOVED is incremented every time the loop below
+    ## doesn't find a card while the player isn't playing
+    ##
+    ## so LOOP_SLEEP_DURATION * NO_CARD_THREASHOLD is how long a card has to be 
+    ## off the player when it's not playing for the player to treat it like a 
+    ##  new card when you put it back on.
+    NO_CARD_THREASHOLD = 8
+    
+
+ 
   
     logger.debug('Starting RFID Reader')
     print("Place a new tag on the reader.")
@@ -912,17 +1068,59 @@ def main():
     try:
         while APP_RUNNING:
             
+            ## read the RFID from the reader
             rfid_code = reader.read_id_no_block()
         
-            if (rfid_code != existing_id and rfid_code != None):  
-                #logger.debug(f'Recieved RFID {rfid_code}')  
-                existing_id = rfid_code
+            ##
+            ## TODO - I'm not sure RFID code ever = None. Need to test this
+            ##
+            ## TAGS will only be read once 
+            if (rfid_code != CURRRENT_RFID and rfid_code != None):  
+                ## you just read a new card!!!
+                CURRRENT_RFID = rfid_code
                 logger.info(f'RFID Read: {rfid_code}')
-                #print(text)
                 handle_rfid_read(rfid_code)
-        
+                COUNT_SINCE_CARD_REMOVED = 0
+                
+            elif (rfid_code == CURRRENT_RFID):
+                ## You've already read this card but just in case there was a blip
+                ## where the reader missed it for a second, lets remind the app
+                ## that we can still see it.
+                ##
+                ## We reset the counter so that the card really has to be off the 
+                ## devide for a duration of at least LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
+                COUNT_SINCE_CARD_REMOVED = 0
+                
+            elif (CURRRENT_RFID !=0 and rfid_code == None and not aaplayer.is_playing()):
+                ## The card has been removed from the reader and
+                ## the player is not playing
+                COUNT_SINCE_CARD_REMOVED = COUNT_SINCE_CARD_REMOVED +1
+                
+                if COUNT_SINCE_CARD_REMOVED >= NO_CARD_THREASHOLD:
+                    ## the card has been off the player for at least
+                    ## LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
+                    ##
+                    ## So we need to tell the app it's no longer the current
+                    ## card so it will be treated as new the next time it is seen 
+                    CURRRENT_RFID = 0
+
+
+
             aaplayer.keep_playing()
-            time.sleep(.2)
+            
+            
+            
+            ## This will tell the app to send an email once a day.
+            ## all controlls for manaing when the email is sent
+            ## are handled in the email_album_of_the_day() funciton
+            if not aaplayer.is_playing():
+                ## Only try emailing if the player 
+                ## isn't playing. We don't want anything messing up the music
+                check_album_of_the_day_email()
+            
+            
+            
+            time.sleep(LOOP_SLEEP_DURATION)
         logger.debug('APP_RUNNING = False While Loop Completed. RFID Reader')
     except KeyboardInterrupt:
        
