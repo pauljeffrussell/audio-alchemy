@@ -28,6 +28,7 @@ logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logg
 LIBRARY_CACHE_FOLDER = "./library/"
 LIBRARY_SOURCE_FOLDER = "./webm/" # This is where we put the full source files.
 
+
 # Use these two parameters to identify the google sheet with your album database
 DB_SHEET_ID = CONFIG.DB_SHEET_ID
 DB_SHEET_NAME = CONFIG.DB_SHEET_ID
@@ -225,11 +226,13 @@ def list_non_downloaded_albums():
         if (album_folder_name != 0):
             album_folder = LIBRARY_SOURCE_FOLDER + album_folder_name
 
+            album_destination_folder = LIBRARY_CACHE_FOLDER + album_folder_name
             logging.debug(f'CHECKING {album_folder}s...')
             if os.path.exists(album_folder):
                 #if os.path.isdir(folder_name): 
-                logging.debug (f'SKIP - album folder exists - {album_folder}s.')
-                
+                logging.debug (f'SKIP -  Folder Exists: {album_folder}')
+            elif os.path.exists(album_destination_folder):
+                logging.debug (f'SKIP -  Folder Exists: {album_destination_folder}.')
             else:
                 logging.debug (f'ADDING - album folder {album_folder}s.')
                 TBD_DOWNLOAD.append(album_folder_name)

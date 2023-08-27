@@ -12,6 +12,11 @@ import time
 import configfile as CONFIG
 import numpy as np
 import math
+from datetime import datetime
+import smtplib
+from email.message import EmailMessage
+from email.header import Header
+from email.mime.text import MIMEText
 
 # Create the logger
 logger = logging.getLogger()
@@ -262,7 +267,7 @@ def get_tracks(folders, shuffle_tracks):
         #folder_path = os.path.join(base_folder_path, folder)  # Assuming a base folder path
     
         if os.path.exists(folder):
-            logger.debug(f'Getting files for {folder}...')
+            #logger.debug(f'Getting files for {folder}...')
             album_songs = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.splitext(f)[1] in SUPPORTED_EXTENSIONS]
             album_songs.sort()
             all_tracks.extend(album_songs)
@@ -349,6 +354,8 @@ def lookup_field_by_field(df, search_column, search_term, result_column):
 
 
 
+
+
 def play_random_albums():
     global DB, RANDOM_ALBUMS_TO_PLAY
     
@@ -384,13 +391,213 @@ def play_random_albums():
         
     tracks = get_tracks(album_folder_list, False)
     if (len(tracks) > 0):
-        logger.debug (f'Album has tracks. Playing...')
+        foo =3
+        #logger.debug (f'Album has tracks. Playing...')
         #aaplayer.play_tracks(tracks, False )
     else:
         logger.warning (f'No tracks found for folder {album_folder}.')
 
     return tracks
     
+  
+    
+def play_album_of_the_day(lookup_date):
+    global DB
+    rfid = BLANK
+    
+    todays_seed = lookup_date
+    
+    #todays_seed = int(datetime.today().strftime('%Y%m%d'))
+    #print (f'Seed {todays_seed}')
+   
+    # Set the seed with today's date so we always get the same answer
+    np.random.seed(todays_seed)
+    
+
+    
+    ## don't use rows with a 1 in the 
+    filtered_df = DB[DB['exclude_from_random'] != 1]
+    sample_size = min(len(filtered_df), 50)
+    
+    todays_rfid_list = filtered_df.sample(n=sample_size, random_state=todays_seed)['rfid'].tolist()
+    
+
+    found_rfid = None  # This will store the found rfid value
+
+    for rfid in todays_rfid_list:
+        if rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+            continue
+        else:
+            found_rfid = rfid  # Store the rfid that passed the check
+            break
+    
+    album_folder_name = lookup_field_by_field(DB, 'rfid', found_rfid, 'folder')
+    
+    logger.debug(f'Album of the day:\n        {album_folder_name}...')
+    send_album_of_the_day_email(found_rfid)
+    
+    
+    
+    """album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+
+    
+    tracks = get_tracks([album_folder], False)
+    if (len(tracks) > 0):
+        foo = 3
+        #logger.debug (f'Album has tracks. Playing...')
+        #aaplayer.play_tracks(tracks, False )
+    else:
+        logger.warning (f'No tracks found for folder {album_folder}.')
+
+    return tracks"""
+
+def replace_non_strings(variable):
+    if isinstance(variable, str):
+       return variable
+    else:
+        return ""
+       
+def email_album_of_the_day(date_seed_string, rfid ):
+    
+    album_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Album'))
+    album_folder_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'folder'))
+    artist_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Artist'))
+    album_url = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'url'))
+    
+    
+    
+    
+    body = f"""Today's album of the day is:<br><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"""
+    
+    if album_url != "":
+        body = body + f'<a href="{album_url}">'
+    
+    body = body + f"""<b style="font-size: 2em;">{album_name}"""
+    if album_url != "":
+        body = body + f'</a>'
+    
+    if (artist_name != "" or artist_name == "Various Artists"):
+        body = body + "<BR>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by " + artist_name
+        
+    if album_url != "":
+        body = body + f'</a>'
+
+        
+    body = body + f"""</b><BR><BR><BR><BR>
+    <div style="font-size: smaller; color: grey;">Use the hammer to play the album.</div>"""
+    
+    
+    
+    
+    
+
+
+  # Email settings
+    SMTP_SERVER = 'smtp.gmail.com'
+    SMTP_PORT = 587
+    SENDER_EMAIL = CONFIG.EMAIL_SENDER_ADDRESS  # Change this to your Gmail
+    SENDER_PASSWORD = CONFIG.EMAIL_SENDER_PASSWORD      # Change this to your password or App Password
+
+    # Create the message
+    msg = EmailMessage()
+    
+    
+    
+    #msg.set_content(f"Today's date is {datetime.now().strftime('%Y-%m-%d')}")
+    
+    msg = MIMEText(body, 'html') 
+    
+    msg['From'] = Header(f'{CONFIG.EMAIL_SENDER_NAME}', 'utf-8')  # Set sender name here
+    
+                      
+    msg['Subject'] = album_name
+    #msg['From'] = SENDER_EMAIL
+    msg['To'] = CONFIG.EMAIL_SEND_TO  # The receiver's email
+
+    #print("Subject ", msg['Subject'])
+
+    # Send the email
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
+            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+            smtp.send_message(msg)
+            print('Email sent successfully!')
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+    
+
+def send_album_of_the_day_email(rfid):    
+    
+    logger.info(f'Sending an album of the day email...')
+    
+    
+    album_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Album'))
+    album_folder_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'folder'))
+    artist_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Artist'))
+    album_url = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'url'))
+    
+
+    body = f"""Today's album of the day is:<br><br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"""
+    
+    if album_url != "":
+        body = body + f'<a href="{album_url}">'
+    
+    body = body + f"""<b style="font-size: 2em;">{album_name}"""
+    if album_url != "":
+        body = body + f'</a>'
+    
+    if (artist_name != "" or artist_name == "Various Artists"):
+        body = body + "<BR>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by " + artist_name
+        
+    if album_url != "":
+        body = body + f'</a>'
+
+        
+    body = body + f"""</b><BR><BR><BR><BR>
+    <div style="font-size: smaller; color: grey;">Use the hammer to play the album.</div>"""
+    
+    
+    
+    # Email settings
+    SMTP_SERVER = 'smtp.gmail.com'
+    SMTP_PORT = 587
+    SENDER_EMAIL = CONFIG.EMAIL_SENDER_ADDRESS  # Change this to your Gmail
+    SENDER_PASSWORD = CONFIG.EMAIL_SENDER_PASSWORD      # Change this to your password or App Password
+
+    # Create the message
+    msg = EmailMessage()
+    
+    
+    
+    #msg.set_content(f"Today's date is {datetime.now().strftime('%Y-%m-%d')}")
+    
+    msg = MIMEText(body, 'html') 
+    
+    msg['From'] = Header(f'{CONFIG.EMAIL_SENDER_NAME} <{CONFIG.EMAIL_SENDER_ADDRESS}>', 'utf-8')  # Set sender name here
+    
+                      
+    msg['Subject'] = album_name
+    #msg['From'] = SENDER_EMAIL
+    msg['To'] = CONFIG.EMAIL_SEND_TO  # The receiver's email
+
+    #print("Subject ", msg['Subject'])
+
+    # Send the email
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
+            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+            smtp.send_message(msg)
+            logger.info(f'Email sent successfully!')
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+    
+
 
 def main():
     global DB, APP_RUNNING
@@ -401,8 +608,22 @@ def main():
     
     #print(list_folders_in_order(DB))
     
-    for item in play_random_albums():
-        print(item)
+    lookup_date = 20230823
+    
+    todays_seed = int(datetime.today().strftime('%Y%m%d'))
+    
+    play_album_of_the_day(20230823)
+    #play_album_of_the_day(20230823)
+    
+    
+    """i = 0
+    while i < 31: 
+        play_album_of_the_day(lookup_date)
+        lookup_date = lookup_date +1
+        i = i+1
+    """
+    #for item in play_random_albums():
+    #    print(item)
     #print (play_random_albums())
     
     #i=0
