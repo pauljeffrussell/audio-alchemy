@@ -582,7 +582,7 @@ def send_album_of_the_day_email(rfid):
                       
     msg['Subject'] = album_name
     #msg['From'] = SENDER_EMAIL
-    msg['To'] = CONFIG.EMAIL_SEND_TO  # The receiver's email
+    msg['To'] =  CONFIG.EMAIL_SEND_TO  # The receiver's email
 
     #print("Subject ", msg['Subject'])
 
@@ -604,7 +604,7 @@ def main():
     
     #try:
     # Load the database of RFID tags and their matching albums
-    DB = load_database(False)
+    DB = load_database(True)
     
     #print(list_folders_in_order(DB))
     
@@ -612,7 +612,7 @@ def main():
     
     todays_seed = int(datetime.today().strftime('%Y%m%d'))
     
-    play_album_of_the_day(20230823)
+    play_album_of_the_day(20230826)
     #play_album_of_the_day(20230823)
     
     

@@ -890,7 +890,7 @@ def check_album_of_the_day_email():
         if ALBUM_OF_THE_DAY_LAST_EMAIL_DATE != ALBUM_OF_THE_DAY_DATE:
             ## We haven't send an email today
             ## but we don't want to send the email before 4am
-            if is_past_4am():         
+            if is_past_send_time():         
                 ## It's a new day and past 4am!!!
                 logger.info(f'New Album of the day available. Seed: {ALBUM_OF_THE_DAY_DATE}')
                 
@@ -915,12 +915,12 @@ def replace_non_strings(variable):
     else:
         return ""
        
-def is_past_4am():
+def is_past_send_time():
     # Get the current hour
     current_hour = datetime.now().hour
     
     # Check if current hour is past 5 AM
-    return current_hour >= 4
+    return current_hour >= 3
 
 
 def send_album_of_the_day_email(rfid):    
@@ -999,7 +999,7 @@ def send_album_of_the_day_email(rfid):
 
 
 def main():
-    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_SEED
+    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE
     
     #try:
     # Load the database of RFID tags and their matching albums
@@ -1013,9 +1013,11 @@ def main():
 
 
     ## We set this at statup so that we don't send an email
-    ## every time I restart the system
-    #ALBUM_OF_THE_DAY_SEED = get_album_of_the_day_seed()
-
+    ## every time the system restarts restart the system. Album of the day will instead 
+    ## be sent the day after the system is rebooted.
+    set_album_of_the_day_date_and_rfid()
+    ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = ALBUM_OF_THE_DAY_DATE
+    
 
 
     
