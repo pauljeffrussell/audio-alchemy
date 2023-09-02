@@ -899,8 +899,8 @@ def main():
     
     exclude = lookup_field_by_field(DB, 'rfid', 714945955662, 'exclude_from_random')
     
-    print("exclude type:")
-    print(type(exclude))
+    #print("exclude type:")
+    #print(type(exclude))
 
     # Filter the dataframe based on the given conditions
     possible_albums = DB[(DB['exclude_from_random'] != 1) & DB['rfid'].notna() ]
@@ -923,7 +923,7 @@ def main():
     DB_AOTD_CACHE= load_album_of_the_day_cache()
     #print(list_folders_in_order(DB))
     
-    aotd_seed = get_album_of_the_day_seed()
+    aotd_seed = 20230906 #get_album_of_the_day_seed()
     
     
     print("Getting Album of the day.")
