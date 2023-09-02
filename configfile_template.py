@@ -69,6 +69,7 @@ EMAIL_SENDER_NAME = "Album Of The Day"
 # each day with the album of the day
 EMAIL_SENDER_ADDRESS  = 'INSERT YOUR EMAIL ADDRESS'
 
+
 ## This is the app password for the above address. EMAIL_SENDER_ADDRESS
 ## https://support.google.com/accounts/answer/185833?hl=en
 ## DO NOT MAKE THIS AVAILABLE PUBLICALLY 
