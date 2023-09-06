@@ -1146,6 +1146,9 @@ def set_album_of_the_day_date_and_rfid():
  
 
 def get_album_of_the_day_seed():
+    """
+    Returns: (int) the album of the day seed in YYYYMMDD
+    """
     global PARAM_COMMAND_LINE_SEED_DAY
     
     if PARAM_COMMAND_LINE_SEED_DAY != None:
@@ -1154,7 +1157,7 @@ def get_album_of_the_day_seed():
     else:
         ## we didn't get a fake date from the command line
         ## so use the real date. 
-        return int(datetime.today().strftime('%Y%m%d'))
+        return datetime.today().strftime('%Y%m%d')
 
 
 def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()):
@@ -1167,7 +1170,8 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
     
     logger.debug(f'Getting Alum of the day')
     
-    seed_for_random_lookup = str(seed_for_random_lookup)
+    
+    #seed_for_random_lookup = str(seed_for_random_lookup)
     
     
     ## Let's see if there already was an album of the day
