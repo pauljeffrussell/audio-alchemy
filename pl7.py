@@ -177,7 +177,7 @@ def keep_playing():
     
     
 def play_tracks(tracks, repeat):
-    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT
+    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT, TRACK_LIST_ORIGINAL_ORDER
 
 
     if ALBUM_LOADED:
@@ -195,7 +195,7 @@ def play_tracks(tracks, repeat):
     
     # make the list of tracks available to the entire player
     TRACK_LIST = tracks
-    TRACKS_ORIGINAL_ORDER = tracks
+    TRACK_LIST_ORIGINAL_ORDER = tracks.copy()
     END_TRACK_INDEX = len(TRACK_LIST)
     logging.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
     
@@ -284,7 +284,7 @@ def unshuffle_current_songs():
     ## we put back the original order. Some playlists are not alphabetically ordered.
     ## for example the play 5 random albums are in order per album, but the albums aren't in a specific order
     ## moreover, of you sort that list, you're going to get albums overlapping each other.
-    TRACK_LIST = TRACK_LIST_ORIGINAL_ORDER
+    TRACK_LIST = TRACK_LIST_ORIGINAL_ORDER.copy()
     
     current_index = 0
     play_current_track()
@@ -338,12 +338,29 @@ def pause_track():
 def play_current_track():
     global TRACK_LIST, current_index, MUSIC_PAUSED
     
-    MUSIC_PAUSED = 0
-    current_track = TRACK_LIST[current_index]
-    logging.info(f'Starting: {current_track}')
-    pygame.mixer.music.load(current_track)
-    pygame.mixer.music.play()
     
+    try:
+        MUSIC_PAUSED = 0
+        current_track = TRACK_LIST[current_index]
+        logging.info(f'Starting: {current_track}')
+        pygame.mixer.music.load(current_track)
+        pygame.mixer.music.play()
+    except:
+        logging.debug("Couldn't play current track")
+    
+
+def get_current_track():
+    """
+    gets the current track that is playing
+    
+    """
+    global TRACK_LIST
+    if is_playing():
+        return TRACK_LIST[current_index]
+    else:
+        return None
+    
+
 
 def jump_to_track(track_index):
     global current_index, TRACK_LIST, MUSIC_PAUSED

@@ -18,10 +18,13 @@ import subprocess
 import numpy as np
 from dateutil.parser import parse
 from datetime import datetime, timedelta
+import calendar
 import smtplib
 from email.message import EmailMessage
 from email.header import Header
 from email.mime.text import MIMEText
+import argparse
+import re
 
 
 """
@@ -136,6 +139,8 @@ LAST_BUTTON_HELD = False
 
 """
 Set to true when the current album has been shuffled using a card or holding the play button
+This is used to determine if the next shuffle using the card or button results in a 
+shuffle or unshuffle
 """
 CURRENT_ALBUM_SHUFFLED = False
 
@@ -157,11 +162,24 @@ The current album of the day rfid
 """
 ALBUM_OF_THE_DAY_RFID = 0 
 
+"""
+The flag that tells the app if it should send an email of the day.
+"""
+FLAG_AOTD_ENABLED = False
 
+"""
+When set to true the first album of the day email will be sent today.
+"""
+FLAG_AOTD_SEND_TODAY = False
+
+"""
+The command line parameter to inject a fake date into the application.
+"""
+PARAM_COMMAND_LINE_SEED_DAY = None
 
 ## This is the counter to see roughly how long has 
 ## past since the album of the day was sent
-COUNTER_FOR_ALBUM_OF_THE_DAY = 0
+COUNTER_FOR_ALBUM_OF_THE_DAY = 39995
 
 ## I want to check every hour so every 3600 seconds
 ## we'll check if it's time yet
@@ -185,14 +203,25 @@ def load_database(LOAD_FROM_WEB):
         if os.path.exists(DB_CACHE):
             logging.debug(f'Attempting to load the DB from {DB_CACHE}')
             DB = pd.read_csv(DB_CACHE)
+            
+            DB = pd.read_csv(DB_CACHE, dtype={'genre_card': float, 'label_card': float, \
+                                              'shuffle_albums': float, 'shuffle_songs': float, \
+                                              'repeat': float, 'christmas_aotd': float, \
+                                              'exclude_from_random': float, 'rfid': str} )
+            
+   
+            
             logging.debug("SUCCESS! DB loaded from cache.")
             DB_LOADED = True
             
+            clean_up_catalog_db_column_types()
+            
+            """replaced by the previous line
             DB['sub_genre'] = DB['sub_genre'].fillna(BLANK)
             DB['genre'] = DB['genre'].fillna(BLANK)
             DB['folder'] = DB['folder'].fillna(BLANK)
             DB['labels'] = DB['labels'].fillna(BLANK)
-            
+            """
             
             return DB
         else:
@@ -218,26 +247,52 @@ def load_database(LOAD_FROM_WEB):
             #logger.debug("\n\n")
         
             logger.debug('ready to read the csv from url.')
-            DB = pd.read_csv(db_url)
+            #DB = pd.read_csv(db_url)
+            
+            DB = pd.read_csv(db_url, dtype={'genre_card': float, 'label_card': float, \
+                                              'shuffle_albums': float, 'shuffle_songs': float, \
+                                              'repeat': float, 'christmas_aotd': float, \
+                                              'exclude_from_random': float, 'rfid': str} )
+            
             logging.debug("SUCCESS! The DB loaded from the web.")
             
 
+
+            clean_up_catalog_db_column_types()
             
             backup_cache(DB_CACHE)
             DB.to_csv(DB_CACHE, index=False)
+            
+            """replaced by the previous line
             DB['sub_genre'] = DB['sub_genre'].fillna(BLANK)
             DB['genre'] = DB['genre'].fillna(BLANK)
             DB['folder'] = DB['folder'].fillna(BLANK)
             DB['labels'] = DB['labels'].fillna(BLANK)
-            
+            """
             
             DB_LOADED = True
+            
+            
             return DB
         except Exception as e:
             logging.debug(f'An exception occurred:')
             logging.debug(str(e))
             logging.debug("DB load failed. Retrying in 3 seconds.")
             time.sleep(3)
+
+def clean_up_catalog_db_column_types():
+    """
+    This function cleans up the columns coming from the google sheet. One stray space in a column 
+    of integers and everything becomes a sting. So we clean it all up before using it. 
+    """
+    global DB
+    
+    ## fill in any empty columns with BLANKs
+    DB['sub_genre'] = DB['sub_genre'].fillna(BLANK)
+    DB['genre'] = DB['genre'].fillna(BLANK)
+    DB['folder'] = DB['folder'].fillna(BLANK)
+    DB['labels'] = DB['labels'].fillna(BLANK)
+   
 
 def load_album_of_the_day_cache():
     """
@@ -258,7 +313,8 @@ def load_album_of_the_day_cache():
         print(f"{FILE_AOTD_CACHE} has been created with the specified columns.")
         
     # Read the contents into a DataFrame (whether the file initially existed or was just created)
-    return pd.read_csv(FILE_AOTD_CACHE)
+    return pd.read_csv(FILE_AOTD_CACHE, dtype={'date': str, 'rfid': str, 'album_name': str})
+    
 
 def update_aotd_cache(date, rfid, album_name):
     """
@@ -332,7 +388,7 @@ def backup_cache(cache_file):
     else:
         logging.debug(f'No cache file found at {cache_file} to backup. ')
 
-def main():
+def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE, DB_AOTD_CACHE
     
     #try:
@@ -358,8 +414,12 @@ def main():
     ## every time the system restarts restart the system. Album of the day will instead 
     ## be sent the day after the system is rebooted.
     set_album_of_the_day_date_and_rfid()
-    ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = ALBUM_OF_THE_DAY_DATE
-      
+    
+    if FLAG_AOTD_SEND_TODAY == False:
+        ## only send the email of the today if the --email_today flag
+        ## was passed on the command line. Otherwise, send the first one tomorrow
+        ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = ALBUM_OF_THE_DAY_DATE
+    
 
     # Set up the event handlers for the button controls
     start_button_controls()
@@ -492,63 +552,19 @@ def handle_rfid_read(rfid_code):
     global DB
     
     
-    genre_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre_card')
+    #genre_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre_card')
 
-    label_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')
+    #label_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')
     #except:
     #    logger.warning("Could not load genre or label card on RFID read.")
     
     if (command_card_handler(rfid_code) == True):
         ## You found a command card. It's been executed. Don't do anything else.
         logger.debug(f'Completed command card: {rfid_code}...')
-        
-    elif (genre_card == 1):
-        ## this card is meant to play a genre instead of a specific album
-        genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre')
-        sub_genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'sub_genre')
-        
-        #get the list of all the folders from this genre
-        genre_album_folder_list = get_albums_for_genre(genre, sub_genre, is_album_shuffle(rfid_code))
-        
-        tracks = get_tracks(genre_album_folder_list, is_song_shuffle(rfid_code))
-        
-        if (len(tracks) > 0):
-            logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )   
-            CURRENT_ALBUM_SHUFFLED = False
-    
-    elif (label_card == 1):
-        #this card is a label card. It is intended to play all of the albums with a matching lable.
-        label = lookup_field_by_field(DB, 'rfid', rfid_code, 'labels')
-        label_album_folder_list = get_albums_for_label(label, is_album_shuffle(rfid_code))
-        tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
-        
-        if (len(tracks) > 0):
-            logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
-            CURRENT_ALBUM_SHUFFLED = False
-    
     else:
-        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
-        logger.debug(f'Attemptting to play album: {album_folder_name}...')
-
-
-        if album_folder_name != 0:
-
-            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+        ## this must be a music card.
+        music_card_handler(rfid_code)
         
-        
-            tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
-
-            if (len(tracks) > 0):
-                logger.debug (f'Album has tracks. Playing...')
-                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
-                CURRENT_ALBUM_SHUFFLED = False
-            else:
-                logger.warning (f'No tracks found for folder {album_folder}.')    
-        else:
-            logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
-            
 
 def command_card_handler(rfid_code):
     """
@@ -561,7 +577,6 @@ def command_card_handler(rfid_code):
     if (command_code == CONFIG.COMMAND_PLAY_ALBUM_OF_THE_DAY):
         logger.debug('Playing Album of the day.')
         play_album_of_the_day()
-        CURRENT_ALBUM_SHUFFLED = False
         return True 
     elif (command_code == CONFIG.COMMAND_STOP_AND_RELOAD_DB ):
         logger.debug('Executing Command Card Stop Player & Reload Database')
@@ -583,10 +598,73 @@ def command_card_handler(rfid_code):
         logger.debug('Read RFID to play in order from a random track')
         aaplayer.play_in_order_from_random_track()
         return True 
+    elif (command_code == CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME):
+        ## We're going to email the current track to the 
+        current_track_for_email = aaplayer.get_current_track()
+        if current_track_for_email != None:
+                        #send an email with that track
+            send_email_with_current_track(current_track_for_email)
+        return True
     else:
         return False
     
+
+def music_card_handler(rfid_code):
+    """
+    When you have a music card pass this fucntion the RFID and it will play it. 
+    """
+    global DB
     
+
+    if (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'genre_card')):
+        ## this card is meant to play a genre instead of a specific album
+        genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre')
+        sub_genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'sub_genre')
+        
+        #get the list of all the folders from this genre
+        genre_album_folder_list = get_albums_for_genre(genre, sub_genre, is_album_shuffle(rfid_code))
+        
+        tracks = get_tracks(genre_album_folder_list, is_song_shuffle(rfid_code))
+        
+        if (len(tracks) > 0):
+            logger.debug (f'Album folder exists. Playing Genre')
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )   
+            CURRENT_ALBUM_SHUFFLED = False
+    
+    elif (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')):
+        #this card is a label card. It is intended to play all of the albums with a matching lable.
+        label = lookup_field_by_field(DB, 'rfid', rfid_code, 'labels')
+        label_album_folder_list = get_albums_for_label(label, is_album_shuffle(rfid_code))
+        tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
+        
+        if (len(tracks) > 0):
+            logger.debug (f'Album folder exists. Playing Genre')
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+            CURRENT_ALBUM_SHUFFLED = False
+    
+    else:
+        ## it must be an album card or no card at all
+        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
+        logger.debug(f'Attemptting to play album: {album_folder_name}...')
+
+
+        if album_folder_name != 0:
+            ## the album folder Exists!!!
+            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+        
+            tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
+
+            if (len(tracks) > 0):
+                logger.debug (f'Album has tracks. Playing...')
+                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+                CURRENT_ALBUM_SHUFFLED = False
+            else:
+                logger.warning (f'No tracks found for folder {album_folder}.')    
+        else:
+            ## after all that you didn't find a card.
+            logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
+            
+
 def start_button_controls():
  
     button16 = Button("BOARD16")
@@ -750,9 +828,7 @@ def lookup_field_by_field(df, search_column, search_term, result_column):
         #didn't find that RFID in the sheet
         logger.warning(f'The value {search_term} was not found in the column {search_column}.')
         return 0
-        
-        
-        
+          
         
 def replace_non_strings(variable):
     """
@@ -956,7 +1032,7 @@ def get_tracks(folders, shuffle_tracks):
 """
 #################################################################################
 
-            Album of the day & Random Albums Mechanics
+            Album of the day, Random Albums, & Email Mechanics
 
 #################################################################################"""
 
@@ -964,8 +1040,14 @@ def play_album_of_the_day():
     global DB, ALBUM_OF_THE_DAY_RFID
     
     #found_rfid = get_album_of_the_day_rfid()
-    
+    ## make sure we're using the latest album of the day
     set_album_of_the_day_date_and_rfid()
+    
+    ## pass this to the music card handler
+    ## so the album of the day behaves the same as all other music.
+    music_card_handler(ALBUM_OF_THE_DAY_RFID)
+
+    """ Commented out 2023-09-04 and replaced with the above music_card_handler(ALBUM_OF_THE_DAY_RFID) line
     
     album_folder_name = lookup_field_by_field(DB, 'rfid', ALBUM_OF_THE_DAY_RFID, 'folder')
     logger.debug(f'Attemptting to load album: {album_folder_name}...')
@@ -980,7 +1062,7 @@ def play_album_of_the_day():
     else:
         logger.warning (f'No tracks found for folder {album_folder}.')
 
-    return tracks
+    return tracks"""
     
 
 def set_album_of_the_day_date_and_rfid():
@@ -1003,7 +1085,7 @@ def set_album_of_the_day_date_and_rfid():
     Note: This was the old def get_album_of_the_day_rfid(): 
 
     """
-    global DB, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID
+    global DB, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID, FLAG_AOTD_ENABLED
     rfid = BLANK
     
     #use today's date YYYYMMDD as the seed for pulling random albums
@@ -1046,21 +1128,248 @@ def set_album_of_the_day_date_and_rfid():
          """
         rfid = get_album_of_the_day_rfid(todays_seed)
         
+        logger.debug(f'Album of the day RFID is: {rfid}...')
+        
         ALBUM_OF_THE_DAY_RFID = rfid  # Store the rfid that passed the check
         ALBUM_OF_THE_DAY_DATE = todays_seed # store the current album of the day date/seed
         
+        
+        
         folder = replace_non_strings(lookup_field_by_field(DB, "rfid", rfid, "folder"))
         
-        if check_aotd_cache_for_today(todays_seed) == None:
+        if check_aotd_cache_for_today(todays_seed) == None and FLAG_AOTD_ENABLED == True:
             ## We appear to have't saveded the album of the day in the cache. 
             ## I guess this is our first time doing this. 
             update_aotd_cache(todays_seed, rfid, folder)
             
         return True
-               
-                
+ 
+
 def get_album_of_the_day_seed():
-    return int(datetime.today().strftime('%Y%m%d'))
+    global PARAM_COMMAND_LINE_SEED_DAY
+    
+    if PARAM_COMMAND_LINE_SEED_DAY != None:
+        ## someone passed in a fake date use that instead
+        return PARAM_COMMAND_LINE_SEED_DAY
+    else:
+        ## we didn't get a fake date from the command line
+        ## so use the real date. 
+        return int(datetime.today().strftime('%Y%m%d'))
+
+
+def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()):
+    """
+        pulls a random RFID out of the database making sure it's hasn't been the album of 
+        the day reciently
+    """
+    global DB, DB_AOTD_CACHE, AOTD_REPEAT_LIMIT
+    rfid = BLANK
+    
+    logger.debug(f'Getting Alum of the day')
+    
+    seed_for_random_lookup = str(seed_for_random_lookup)
+    
+    
+    ## Let's see if there already was an album of the day
+    found_rfid = check_aotd_cache_for_today(seed_for_random_lookup)  # This will store the found rfid value
+    
+    if found_rfid != None:
+        ## We appear to have already saved the album of the day in the cache. So no need to look it up again. 
+        return found_rfid
+    
+    ## Let's see if there's a specific album assigned for today
+    found_rfid = get_assigned_aotd_for_today(seed_for_random_lookup)
+    if found_rfid != None:
+        ## We appear to have an album of the day assigned to this day so no need to pick a random one.
+        ## Let's use the one in the DB.
+        return found_rfid
+    
+    
+    ## Load the x previous albums of the day
+    try:
+        aotd_block_list = DB_AOTD_CACHE.tail(int(len(DB)*AOTD_REPEAT_LIMIT))
+    except (FileNotFoundError, pd.errors.EmptyDataError):
+        # If the albumoftheday.csv file is not found or empty, then all albums in catalog are available
+        aotd_block_list = pd.DataFrame(columns=DB_AOTD_CACHE.columns)  # Empty DataFrame with same columns
+        logger.debug(f'Found no blocked albums. Created blank list')
+    
+    #print("\n\n\nBLOCK LIST")
+    #print(aotd_block_list)
+    
+    available_albums = pd.DataFrame()
+    
+    if is_between_thanksgiving_and_christmas_inclusive():
+        """     *                                                          *
+                                             *                  *        .--.
+                 \/ \/  \/  \/                                        ./   /=*
+                   \/     \/      *            *                ...  (_____)
+                    \ ^ ^/                                       \ \_((^o^))-.     *
+                    (o)(O)--)--------\.                           \   (   ) \  \._.
+                    |    |  ||================((~~~~~~~~~~~~~~~~~))|   ( )   |     \
+                     \__/             ,|        \. * * * * * * ./  (~~~~~~~~~~~)    \
+              *        ||^||\.____./|| |          \___________/     ~||~~~~|~'\____/ *
+                       || ||     || || A            ||    ||          ||    |   
+                *      <> <>     <> <>          (___||____||_____)   ((~~~~~|   *
+              
+        ## starting on thanksgiving we play Christmas Albums as the album of the day until and including Christmas day 
+        ## anything with a 1 in the christmas_random column is fair game"""
+        
+        """condition1 = ~DB['rfid'].isin(aotd_block_list['rfid'])
+        condition2 = DB['christmas_aotd'] == 1
+        print("DB Condition 1 - not in the block list")
+        print(DB[condition1])
+
+
+        print("\n\n\nDB Condition 2 - christmas_aotd == 1")
+
+        print(DB[condition2])"""
+        
+        available_albums = DB[(~DB['rfid'].isin(aotd_block_list['rfid'])) & (DB['christmas_aotd'] == 1)]
+        logger.debug(f'Getting Christmas albums.')
+        
+    else:
+        """
+        condition0 = DB['rfid'].isin(aotd_block_list['rfid'])
+        
+        condition1 = ~DB['rfid'].isin(aotd_block_list['rfid'])
+        condition2 = DB['exclude_from_random'] != 1
+        
+        condition3 = DB['exclude_from_random'] == 1
+        
+        # Set pandas display options
+        pd.set_option('display.max_rows', None)
+        pd.set_option('display.max_columns', None)
+        pd.set_option('display.width', None)
+        pd.set_option('display.max_colwidth', None)
+
+        # Print the entire DataFrame
+       
+        print("\n\n\nDB Condition 0 - in the block list")
+        print(DB[condition0])
+        print("\n\n\n Catalog RFID Type")
+        print(DB['rfid'].dtype)
+        print("\n\n\nBlocklist RFID Type")
+        print(aotd_block_list['rfid'].dtype)
+        print("\n\n\n")
+         
+        print("\n\n\nDB Condition 1 - not in the block list")
+        print(DB[condition1])
+
+
+        print("\n\n\nDB Condition 2 - exclude_from_random != 1")
+
+        print(DB[condition2])
+        
+        print("\n\n\nDB Condition 3 - exclude_from_random == 1")
+
+        print(DB[condition3])
+        """ 
+        ## It's not the Christmas season, so play everything but christmas music
+        ## Filter the catalog DataFrame to only include rows where the album hasn't been played 
+        ## reciently 
+        available_albums = DB[(~DB['rfid'].isin(aotd_block_list['rfid'])) & (DB['exclude_from_random'] != 1)]
+            
+    
+    sample_size = len(available_albums)
+    logger.debug(f'{sample_size} available albums.')
+    
+    todays_rfid_list = available_albums.sample(n=sample_size, random_state=int(seed_for_random_lookup))['rfid'].tolist()
+    
+
+    # This was replaced by the above code.
+    # found_rfid = None  # This will store the found rfid value
+
+    for rfid in todays_rfid_list:
+        if rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+            continue
+        else:
+            found_rfid = rfid  # Store the rfid that passed the check
+            break
+    
+    #print (found_rfid)
+    return found_rfid
+
+
+def thanksgiving(year):
+    """
+    Figures out when Thanksgiving is for the provided year.
+    
+    Parameters:
+    - year: a 4 digit year like 2023
+    
+    Returns:
+    Datetime: for the date of thanksgiving for the year provided
+    """
+    # November is represented by 11 in the month list
+    weeks = calendar.monthcalendar(year, 11)
+    
+    # If there's a Thursday in the first week of the month
+    if weeks[0][calendar.THURSDAY]:
+        # Return the date of the fourth Thursday
+        day = weeks[3][calendar.THURSDAY]
+    else:
+        # Otherwise, return the date of the fourth Thursday from the second week onward
+        day = weeks[4][calendar.THURSDAY]
+    
+    return datetime(year, 11, day).date()
+
+
+def is_between_thanksgiving_and_christmas_inclusive():
+    """
+    Determines if the current date is between Thanksgiving and Christmas inclusive
+    
+    Returns: 
+    Boolean: True if today is between Thanksgiving and Christmas inclusive. False otherwise.
+    
+    """
+    global PARAM_COMMAND_LINE_SEED_DAY
+    
+    
+    current_date = datetime.now().date()
+    
+    if PARAM_COMMAND_LINE_SEED_DAY != None:
+        ## we recieved a command line date, so we're going to use that
+        ## for the current date
+        current_date = datetime.strptime(PARAM_COMMAND_LINE_SEED_DAY, "%Y%m%d").date()
+
+    
+    #current_date = datetime(2023, 12, 26)
+    thanksgiving_date = thanksgiving(current_date.year)
+    christmas_date = datetime(current_date.year, 12, 25).date()
+    
+    return thanksgiving_date <= current_date <= christmas_date
+     
+def get_assigned_aotd_for_today(date_to_check):
+    """
+    Given the provided date, check if there is an album assigned.
+    
+    Parameters:
+    -date_to_check: a string in the format YYYYMMDD for the date to check or 
+                    the name thanksgiving
+    
+    Returns: The RFID of the album of the day for that day if one is defined in the DB
+            otherwise it returns None
+    """                
+    global DB
+    
+    ## first lets get the parts we need
+    year = date_to_check[:4]
+    month = date_to_check[4:6]
+    monthday = date_to_check[4:]
+    
+    
+    aotd_rfid = lookup_field_by_field(DB, 'aotd_date', monthday, 'rfid')
+    
+    ## if the date provided matches a field, then return that rfid
+    if aotd_rfid != 0:
+        return aotd_rfid
+    elif date_to_check == thanksgiving(int(year)).strftime('%Y%m%d'):
+        aotd_rfid = lookup_field_by_field(DB, 'aotd_date', "thanksgiving", 'rfid')
+        if aotd_rfid != 0:
+            return aotd_rfid
+    
+    return None
+    
 
 
 def check_album_of_the_day_email():
@@ -1069,7 +1378,8 @@ def check_album_of_the_day_email():
     If it is, and it hasn't been sent yet, it calls the function to send
     the email.
     """
-    global COUNTER_FOR_ALBUM_OF_THE_DAY, CHECK_ALBUM_OF_THE_DAY_COUNT_LIMIT, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE
+    global COUNTER_FOR_ALBUM_OF_THE_DAY, CHECK_ALBUM_OF_THE_DAY_COUNT_LIMIT, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE, FLAG_AOTD_ENABLED
+
 
     #logger.info(f'Checking email of the day... current count: {COUNTER_FOR_ALBUM_OF_THE_DAY}')
 
@@ -1077,9 +1387,10 @@ def check_album_of_the_day_email():
     if COUNTER_FOR_ALBUM_OF_THE_DAY < CHECK_ALBUM_OF_THE_DAY_COUNT_LIMIT:
         ## We haven't looped enough times yet 
         COUNTER_FOR_ALBUM_OF_THE_DAY = COUNTER_FOR_ALBUM_OF_THE_DAY + 1
+        #logger.debug(f'counter: {COUNTER_FOR_ALBUM_OF_THE_DAY}')
     else:
         ## It's been long enough, lets see if we need to send an email
-        
+        ##logger.debug(f'time to check the email situation')
         # Start by resetting the counter so that we start the loop over 
         # and come back in a bit no matter what.         
         COUNTER_FOR_ALBUM_OF_THE_DAY = 0
@@ -1091,22 +1402,29 @@ def check_album_of_the_day_email():
         #new_seed = get_album_of_the_day_rfid()
 
         if ALBUM_OF_THE_DAY_LAST_EMAIL_DATE != ALBUM_OF_THE_DAY_DATE:
+            #logger.debug(f'havent emailed yet')
             ## We haven't send an email today
             ## but we don't want to send the email before 4am
             if is_past_send_time():         
                 ## It's a new day and past 4am!!!
-                logger.info(f'New Album of the day available. Seed: {ALBUM_OF_THE_DAY_DATE}')
+                #logger.info(f'New Album of the day available. Seed: {ALBUM_OF_THE_DAY_DATE}')
                 
                 ## let's record that we've now sent an email today
                 ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = ALBUM_OF_THE_DAY_DATE
 
                 # and lets send the email
-                send_album_of_the_day_email(ALBUM_OF_THE_DAY_RFID)
+                if FLAG_AOTD_ENABLED == True:
+                    ## We're supposed to send the email of the day.
+                    ## because we recieved the --email argument when the app was started 
+                    send_album_of_the_day_email(ALBUM_OF_THE_DAY_RFID)
+                else:
+                    logger.warning(f'Skipping AOTD email because --email was not passed to the application.')
+                    
             else:
                 hour = datetime.now().hour
                 logger.info(f'New Album of the day available. BUT its not 4am yet. Current hour{hour}')
                 COUNTER_FOR_ALBUM_OF_THE_DAY = 0
-
+        
        
 def is_past_send_time():
     # Get the current hour
@@ -1240,62 +1558,6 @@ def play_random_albums():
     return tracks
 
 
-def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()):
-    """
-        pulls a random RFID out of the database making sure it's hasn't been the album of 
-        the day reciently
-    """
-    global DB, DB_AOTD_CACHE, AOTD_REPEAT_LIMIT
-    rfid = BLANK
-    
-    seed_for_random_lookup = int(seed_for_random_lookup)
-    
-    
-    ## Let's see if there already was an album of the day
-    
-    found_rfid = check_aotd_cache_for_today(seed_for_random_lookup)  # This will store the found rfid value
-    
-    if found_rfid != None:
-        ## We appear to have already saved the album of the day in the cache. So no need to look it up again. 
-        return found_rfid
-    
-    
-    ## Load the x previous albums of the day
-    try:
-        aotd_block_list = DB_AOTD_CACHE.tail(int(len(DB)*AOTD_REPEAT_LIMIT))
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        # If the albumoftheday.csv file is not found or empty, then all albums in catalog are available
-        aotd_block_list = pd.DataFrame(columns=DB_AOTD_CACHE.columns)  # Empty DataFrame with same columns
-        logger.DEBUG(f'Found no blocked albums. Created blank list')
-    
-    
-    # Filter the catalog DataFrame to only include rows where the album name is not in the last 30 of albumoftheday
-    #available_albums = catalog_df[~catalog_df['Album Name'].isin(last_30_albums['Album Name'])]
-    available_albums = DB[(~DB['rfid'].isin(aotd_block_list['rfid'])) & (DB['exclude_from_random'] != "1")]
-    
-    
-    sample_size = len(available_albums)
-    
-    #logger.debug(f'Available album list has {sample_size} albums.')
-    
-    
-    todays_rfid_list = available_albums.sample(n=sample_size, random_state=seed_for_random_lookup)['rfid'].tolist()
-    
-
-    # This was replaced by the above code.
-    # found_rfid = None  # This will store the found rfid value
-
-    for rfid in todays_rfid_list:
-        if rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
-            continue
-        else:
-            found_rfid = rfid  # Store the rfid that passed the check
-            break
-    
-    #print (found_rfid)
-    return found_rfid
-
-
 def check_aotd_cache_for_today(date_to_check):
     """
     Checks the album of the day cache to see if we've already saved today's
@@ -1318,110 +1580,106 @@ def check_aotd_cache_for_today(date_to_check):
 
 
 
+def send_email_with_current_track(current_track_for_email):
+    """
+    sends an email with current_track_for_email 
+    """
+    
+    current_datetime = datetime.now()
+    formatted_datetime = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
+    
+    body = f"""{current_track_for_email}<br><br><br>"""
+    
+    body = body + f"""<BR><BR><BR><BR>
+    <div style="font-size: smaller; color: grey;">It is {formatted_datetime}</div>"""
+    
+
+    # Email settings
+    SMTP_SERVER = 'smtp.gmail.com'
+    SMTP_PORT = 587
+    SENDER_EMAIL = CONFIG.EMAIL_SENDER_ADDRESS  # Change this to your Gmail
+    SENDER_PASSWORD = CONFIG.EMAIL_SENDER_PASSWORD      # Change this to your password or App Password
+
+    # Create the message
+    msg = EmailMessage()
+      
+    
+    msg = MIMEText(body, 'html') 
+          
+
+                      
+    msg['Subject'] = f'Now Playing on AudioAlchemy'
+    msg['From'] = CONFIG.EMAIL_SENDER_NAME_FOR_INFO_MESSAGES
+    msg['To'] = CONFIG.EMAIL_SEND_TO_FOR_INFO_MESSAGES  # The receiver's email
+
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
+            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+            smtp.send_message(msg)
+            logger.info(f'Email sent successfully!')
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+
+
+
+
+
 """
 #################################################################################
 
-            Old Code you should purge after 2023-09-02
+           Command line arguments and validation
 
 #################################################################################"""
-""" If this is still here after 2023-09-02 and you're not fixing a bug, you can delete it.
-    Originally commented out 2023-08-22 I'm pretty sure this hasn't been used in months.
-                   
-def handle_rfid_read_old(rfid_code):
-    global DB, THREAD_LOCK
-    
-    #THREAD_LOCK.acquire()
-    
-    logger.debug(f'Looking up album folder for RFID: {rfid_code}...')
 
-    ## check if you recieved a command card
-    ## Command cards handle system wide settings 
-    if (command_card_handler(rfid_code) == True):
-        logger.debug(f'Completed command card: {rfid_code}...')      
+    
+def validate_seed(value):
+    """Validates if the provided value matches the 8-digit format."""
+    if not re.match("^[0-9]{8}$", value):
+        raise argparse.ArgumentTypeError("seed must be in 8-digit format")
+    return value
+
+def main(email_flag_set, date_seed, email_today_set):
+    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_TODAY
+    
+    if email_flag_set:
+        print("The AOTD will be sent.")
+        FLAG_AOTD_ENABLED = True
     else:
-        ##album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
+        print("AOTD Email Disabled")
         
-        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
-        logger.debug(f'Attemptting to play {album_folder_name}...')
-
-        if (album_folder_name != 0):
-            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
-
-            logger.debug(f'Looking for {album_folder}...')
+        
+    if email_today_set:
+        print("Email will be sent today if --aotd_enabled passed")
+        FLAG_AOTD_SEND_TODAY = True
+    else:
+        print("First AOTD email will be sent tomorrow.")
             
-            if os.path.exists(album_folder):
-                #if os.path.isdir(folder_name): 
-                logger.debug (f'Album folder exists. Playing {album_folder_name}')
-                aaplayer.play_folder( album_folder, is_song_shuffle(rfid_code), is_album_repeat(rfid_code) )
-            else:
-                logger.warning (f'Folder {album_folder} does not exist.')
-                
-             
-def handle_rfid_read(rfid_code):
-        global DB
+    if date_seed != None:
+        print(f'Using provided date seed {date_seed}')
+        PARAM_COMMAND_LINE_SEED_DAY = date_seed
+    else:
+        print(f'No seed provided. Using the real date.')
         
-        #THREAD_LOCK.acquire()
-        
-        logger.debug(f'Looking up album folder for RFID: {rfid_code}...')
     
-        ## check if you recieved a command card
-        ## Command cards handle system wide settings 
-        if (command_card_handler(rfid_code) == True):
-            logger.debug(f'Completed command card: {rfid_code}...')      
-        else:
-            ##album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
-            
-          
-            
-            genere_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'genere_card')
-            
-            if (genere_card = 1):
-                ## this card is meant to play a genre instead of a specific album
-                genre_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre')
-                sub_genre_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'sub_genre')
-                if (len(sub_genre_name) == 0):
-                    logger.debug(f'Attemptting to play genre: {genre_name}...')
-                else:
-                    logger.debug(f'Attemptting to play genre: {genre_name}:{sub_genre_name}...')
-                    
-                
-                
-                #get the list of all the folders from this genre
-                genre_album_folder_list = get_albums_for_genre(genre_full_name)
-                
-                
-                ## play all 
-                aaplayer.play_genre(genre_album_list, is_song_shuffle(rfid_code), is_album_repeat(rfid_code))
-                
-                
-            else:
-                ## This card is meant to play a single album
-                
-                album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
-                logger.debug(f'Attemptting to play album: {album_folder_name}...')
-    
-                if (album_folder_name != 0):
-                    album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
-
-                    logger.debug(f'Looking for {album_folder}...')
-                
-                    if os.path.exists(album_folder):
-                        #if os.path.isdir(folder_name): 
-                        logger.debug (f'Album folder exists. Playing {album_folder_name}')
-                        aaplayer.play_folder( album_folder, is_song_shuffle(rfid_code), is_album_repeat(rfid_code) )
-                    else:
-                        logger.warning (f'Folder {album_folder} does not exist.')
-                    
-        
-"""
-
-
-
-
-
-
-main()
+    alchemy_app_runtime()
     
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Process some command line parameters and flags.')
 
+    # Add the email flag
+    parser.add_argument('--aotd_enabled', action='store_true', help='Set this flag if you want to activate the AOTD email.')
+    
+    # Add the email flag
+    parser.add_argument('--email_today', action='store_true', help='Set this flag if you want to send an email today.')
+
+    # Add the seed parameter with validation but make it optional
+    parser.add_argument('--seed', type=validate_seed, help='A seed value in 8-digit format.')
+
+    args = parser.parse_args()
+
+    main(args.aotd_enabled, args.seed, args.email_today)
 
