@@ -36,13 +36,13 @@ import re
 
 # Create the logger
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 # Create a formatter
 formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
 # Create a stream handler to log to STDOUT
 stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setLevel(logging.DEBUG)
+stream_handler.setLevel(logging.INFO)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
@@ -207,7 +207,7 @@ def load_database(LOAD_FROM_WEB):
             DB = pd.read_csv(DB_CACHE, dtype={'genre_card': float, 'label_card': float, \
                                               'shuffle_albums': float, 'shuffle_songs': float, \
                                               'repeat': float, 'christmas_aotd': float, \
-                                              'exclude_from_random': float, 'rfid': str} )
+                                              'exclude_from_random': float, 'aotd_date': str, 'rfid': str} )
             
    
             
@@ -252,7 +252,7 @@ def load_database(LOAD_FROM_WEB):
             DB = pd.read_csv(db_url, dtype={'genre_card': float, 'label_card': float, \
                                               'shuffle_albums': float, 'shuffle_songs': float, \
                                               'repeat': float, 'christmas_aotd': float, \
-                                              'exclude_from_random': float, 'rfid': str} )
+                                              'exclude_from_random': float, 'aotd_date': str, 'rfid': str} )
             
             logging.debug("SUCCESS! The DB loaded from the web.")
             
@@ -388,6 +388,12 @@ def backup_cache(cache_file):
     else:
         logging.debug(f'No cache file found at {cache_file} to backup. ')
 
+def is_rfid_codes_match(rfid1,rfid2):
+    
+    return str(rfid1) == str(rfid2)
+    
+    
+
 def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE, DB_AOTD_CACHE
     
@@ -434,6 +440,12 @@ def alchemy_app_runtime():
     ## Reader doesn't see this card for some period. After it has stopped playing. 
     CURRRENT_RFID = 0
     
+    
+    ## sometimes we get a command code and we want to remember the previous
+    ## rfid so if we put that card back, it doesn't restart that album
+    ## because it thinks that the current card is the command card
+    PREVIOUS_RFID = 0
+    
     ## A counter of the number of times the loop below happened
     ## when there was no card and the player wasn't playing
     COUNT_SINCE_CARD_REMOVED = 0
@@ -462,12 +474,35 @@ def alchemy_app_runtime():
             rfid_code = reader.read_id_no_block()
         
             ## TAGS will only be read once 
-            if (rfid_code != CURRRENT_RFID and rfid_code != None):  
+            if (rfid_code != CURRRENT_RFID and rfid_code != PREVIOUS_RFID and rfid_code != None):  
                 ## you just read a new card!!!
+                if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
+                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
+                    logger.debug("Backing up playing RFID")
+                    ## lets save the current RFID since this is a command card 
+                    ## that acts on the currently playing album
+                    PREVIOUS_RFID = CURRRENT_RFID 
+                else:
+                    PREVIOUS_RFID = 0
+                    logger.debug("Not the command code you're looking for.")
+                                      
+                
+                
                 CURRRENT_RFID = rfid_code
                 logger.info(f'RFID Read: {rfid_code}')
                 handle_rfid_read(rfid_code)
                 COUNT_SINCE_CARD_REMOVED = 0
+                
+                """if (is_rfid_codes_match(rfid_code,CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
+                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
+                    logger.debug("Restoring playing RFID")
+                    ## put the previously playing album rfid back so that the user 
+                    ## can put the album card back on without restarting the album
+                    CURRRENT_RFID = PREVIOUS_RFID
+                    ## Now pause so that you don't re-read the card again. 
+                 """   #time.sleep(1.5)
+                
+                
                 
             elif (rfid_code == CURRRENT_RFID):
                 ## You've already read this card but just in case there was a blip
@@ -490,7 +525,7 @@ def alchemy_app_runtime():
                     ## So we need to tell the app it's no longer the current
                     ## card so it will be treated as new the next time it is seen 
                     CURRRENT_RFID = 0
-
+                    PREVIOUS_RFID = 0
 
 
             aaplayer.keep_playing()
@@ -511,7 +546,7 @@ def alchemy_app_runtime():
         logger.debug('APP_RUNNING = False While Loop Completed. RFID Reader')
     except KeyboardInterrupt:
        
-    # wait until the user hits exit
+        # wait until the user hits exit
         #message = input("Press enter to quit\n\n") # Run until someone presses enter
     
         #finally:
@@ -580,7 +615,20 @@ def command_card_handler(rfid_code):
         return True 
     elif (command_code == CONFIG.COMMAND_STOP_AND_RELOAD_DB ):
         logger.debug('Executing Command Card Stop Player & Reload Database')
+        
+        ## stop the music so it seems like an update is happening
+        aaplayer.pause_track()
+        
+        ## start playing the processing feedback sound
+        aaplayer.play_feedback(CONFIG.COMMAND_STOP_AND_RELOAD_DB_FEEDBACK)
+        
+        ## while the sound is playing update the DB
         DB = load_database(True)
+        
+        ## wait for 2.5 seconds so the feedback audio can complete
+        time.sleep(2.5)
+        
+        ## reset the player. I'm not sure why this is here. It probably served a purpose a long time ago
         aaplayer.shutdown_player()
         aaplayer.startup()
         CURRENT_ALBUM_SHUFFLED = False
@@ -602,7 +650,11 @@ def command_card_handler(rfid_code):
         ## We're going to email the current track to the 
         current_track_for_email = aaplayer.get_current_track()
         if current_track_for_email != None:
-                        #send an email with that track
+                        
+            ## play the feedback sound that the command card is being processed.
+            aaplayer.play_feedback(CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME_FEEDBACK)
+            
+            #send an email with that track
             send_email_with_current_track(current_track_for_email)
         return True
     else:
@@ -1590,12 +1642,22 @@ def send_email_with_current_track(current_track_for_email):
     """
     
     current_datetime = datetime.now()
-    formatted_datetime = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
     
-    body = f"""{current_track_for_email}<br><br><br>"""
+    formatted_time =  current_datetime.strftime('%H:%M:%S')
     
-    body = body + f"""<BR><BR><BR><BR>
-    <div style="font-size: smaller; color: grey;">It is {formatted_datetime}</div>"""
+    # Split by directory delimiter
+    parts = current_track_for_email.split('/')
+
+    # Skip the first three directories and join the rest
+    album_and_track_name = '/'.join(parts[4:])
+    
+    
+    
+    body = f"""{album_and_track_name}<br><br><br>"""
+    
+    #formatted_datetime = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
+    #body = body + f"""<BR><BR><BR><BR>
+    #<div style="font-size: smaller; color: grey;">It is {formatted_datetime}</div>"""
     
 
     # Email settings
@@ -1612,7 +1674,7 @@ def send_email_with_current_track(current_track_for_email):
           
 
                       
-    msg['Subject'] = f'Now Playing on AudioAlchemy'
+    msg['Subject'] = f'Now Playing at {formatted_time}'
     msg['From'] = CONFIG.EMAIL_SENDER_NAME_FOR_INFO_MESSAGES
     msg['To'] = CONFIG.EMAIL_SEND_TO_FOR_INFO_MESSAGES  # The receiver's email
 
