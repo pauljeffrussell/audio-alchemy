@@ -25,6 +25,7 @@ from email.header import Header
 from email.mime.text import MIMEText
 import argparse
 import re
+import traceback
 
 
 """
@@ -36,22 +37,25 @@ import re
 
 # Create the logger
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 # Create a formatter
 formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
 # Create a stream handler to log to STDOUT
 stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setLevel(logging.INFO)
+stream_handler.setLevel(logging.DEBUG)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
+
+
 # Create a rotating file handler to log to a file
-#formatterForLogFile = logging.Formatter('%(asctime)s %(message)s -- %(funcName)s %(lineno)d')
-#file_handler = RotatingFileHandler(CONFIG.LOG_FILE_LOCATION, maxBytes=1024*1024, backupCount=5)
-#file_handler.setLevel(logging.DEBUG)
-#file_handler.setFormatter(formatterForLogFile)
-#logger.addHandler(file_handler)
+formatterForLogFile = logging.Formatter('%(asctime)s %(message)s -- %(funcName)s %(lineno)d')
+file_handler = RotatingFileHandler(CONFIG.LOG_FILE_LOCATION, maxBytes=1024*1024, backupCount=5)
+#file_handler = RotatingFileHandler("./logs/error.log", maxBytes=1024*1024, backupCount=5)
+file_handler.setLevel(logging.ERROR)
+file_handler.setFormatter(formatterForLogFile)
+logger.addHandler(file_handler)
 
 """
 #################################################################################
@@ -173,6 +177,11 @@ When set to true the first album of the day email will be sent today.
 FLAG_AOTD_SEND_TODAY = False
 
 """
+Command line argument that tells the app to load the DB from the web.
+"""
+FLAG_LOAD_DB_FROM_THE_WEB = False
+
+"""
 The command line parameter to inject a fake date into the application.
 """
 PARAM_COMMAND_LINE_SEED_DAY = None
@@ -184,6 +193,13 @@ COUNTER_FOR_ALBUM_OF_THE_DAY = 39995
 ## I want to check every hour so every 3600 seconds
 ## we'll check if it's time yet
 CHECK_ALBUM_OF_THE_DAY_COUNT_LIMIT = 36000
+
+"""
+Tracks if the system date has been set. If it has, we don't try to set it
+again because we have what we need and every new attempt can only
+make things the same or worse.
+"""
+IS_SYSTEM_DATE_SET = False
 
 
 
@@ -200,6 +216,7 @@ def load_database(LOAD_FROM_WEB):
     DB_LOADED = False
     
     if not LOAD_FROM_WEB:
+        ## they didn't tell us to use the web so we'll use the cache
         if os.path.exists(DB_CACHE):
             logging.debug(f'Attempting to load the DB from {DB_CACHE}')
             DB = pd.read_csv(DB_CACHE)
@@ -252,7 +269,8 @@ def load_database(LOAD_FROM_WEB):
             DB = pd.read_csv(db_url, dtype={'genre_card': float, 'label_card': float, \
                                               'shuffle_albums': float, 'shuffle_songs': float, \
                                               'repeat': float, 'christmas_aotd': float, \
-                                              'exclude_from_random': float, 'aotd_date': str, 'rfid': str} )
+                                              'exclude_from_random': float, 'aotd_date': str, 'rfid': str, \
+                                              'aotd_greeting': str} )
             
             logging.debug("SUCCESS! The DB loaded from the web.")
             
@@ -292,6 +310,7 @@ def clean_up_catalog_db_column_types():
     DB['genre'] = DB['genre'].fillna(BLANK)
     DB['folder'] = DB['folder'].fillna(BLANK)
     DB['labels'] = DB['labels'].fillna(BLANK)
+    DB['aotd_greeting'] = DB['aotd_greeting'].fillna(BLANK)
    
 
 def load_album_of_the_day_cache():
@@ -350,25 +369,52 @@ def set_ststem_date():
     Because the system is read only, every time you reboot the system thinks the date is 
     June 17 2023 which is when OS was set to read only.
             
-    Intenet requests to google to get the catalog will fail if the system date out of date
+    Intenet requests to google to get the catalog will fail if the system date out of date.
+    
+    2023-09-17 I have a theory, that the reason the app fails to load sometimes is because the internet 
+    isn't set up and we're trying to set the current time from the internet. So I've added this code
+    to make it try 3 times and then give up, but it should never die.
     """
+    global IS_SYSTEM_DATE_SET
+    
+    ATTEMPTS_MADE = 0
+    
+    while (not IS_SYSTEM_DATE_SET and ATTEMPTS_MADE < 3):
+        ## the idea here is to only do this if we haven't already 
+        ## set the date and we haven't failed a lot already. 
+        ##
+        ## if it keeps failing we'll give up and log an error
 
-    logging.debug('Starting set_ststem_date()')
-    response = requests.get('http://worldtimeapi.org/api/timezone/America/New_York')
-    data = response.json()
+        try:
+            ATTEMPTS_MADE = ATTEMPTS_MADE +1
+            logging.debug('Starting set_ststem_date()')
+            response = requests.get('http://worldtimeapi.org/api/timezone/America/New_York')
+            data = response.json()
 
-    # Parsing the datetime string
-    dt = parse(data['datetime'])
+            # Parsing the datetime string
+            dt = parse(data['datetime'])
 
-    # Formatting date time as required by the 'date' command
-    formatted_dt = dt.strftime("%Y-%m-%d %H:%M:%S")
+            # Formatting date time as required by the 'date' command
+            formatted_dt = dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Form the command
-    cmd = f"date -s '{formatted_dt}'"
+            # Form the command
+            cmd = f"date -s '{formatted_dt}'"
 
-    logging.debug(f'Setting system date {cmd}')
-    # Execute the command
-    subprocess.run(['sudo', 'bash', '-c', cmd])    
+            logging.debug(f'Setting system date {cmd}')
+            # Execute the command
+            subprocess.run(['sudo', 'bash', '-c', cmd])    
+            
+            IS_SYSTEM_DATE_SET = True
+        
+        except Exception as e:
+            ## if anything goes wrong, write it to a log file.
+            ## Only Errors will be logged. 
+        
+            logger.error(f"An exception occurred while trying to set the system date: {e}")
+            stack_trace = traceback.format_exc()
+            logger.error(f"{stack_trace}")
+            sleep(3)
+
     
 def backup_cache(cache_file):
     logging.debug('Starting backup_cache().')
@@ -399,7 +445,7 @@ def alchemy_app_runtime():
     
     #try:
     # Load the database of RFID tags and their matching albums
-    DB = load_database(False)
+    DB = load_database(FLAG_LOAD_DB_FROM_THE_WEB)
     
     
     ## the read only OS thinks the date is June 2023 on reboot. In order for 
@@ -444,11 +490,15 @@ def alchemy_app_runtime():
     ## sometimes we get a command code and we want to remember the previous
     ## rfid so if we put that card back, it doesn't restart that album
     ## because it thinks that the current card is the command card
-    PREVIOUS_RFID = 0
+    #PREVIOUS_RFID = 0
     
     ## A counter of the number of times the loop below happened
     ## when there was no card and the player wasn't playing
     COUNT_SINCE_CARD_REMOVED = 0
+    
+    
+    ## We track command cards differently than we count other cards. 
+    COUNT_SINCE_COMMAND_CARD_REMOVED = 0
     
     LOOP_SLEEP_DURATION = .1
     
@@ -459,9 +509,10 @@ def alchemy_app_runtime():
     ## so LOOP_SLEEP_DURATION * NO_CARD_THREASHOLD is how long a card has to be 
     ## off the player when it's not playing for the player to treat it like a 
     ##  new card when you put it back on.
-    NO_CARD_THREASHOLD = 8
+    NO_CARD_THREASHOLD = 10
     
 
+    LAST_COMMAND_CARD = 0
  
   
     logger.debug('Starting RFID Reader')
@@ -473,6 +524,10 @@ def alchemy_app_runtime():
             ## read the RFID from the reader
             rfid_code = reader.read_id_no_block()
         
+            """
+            This is the code that was working before 2023-09-17 
+            I'm going to try ti nake it handle command cards better below. 
+            
             ## TAGS will only be read once 
             if (rfid_code != CURRRENT_RFID and rfid_code != PREVIOUS_RFID and rfid_code != None):  
                 ## you just read a new card!!!
@@ -493,15 +548,7 @@ def alchemy_app_runtime():
                 handle_rfid_read(rfid_code)
                 COUNT_SINCE_CARD_REMOVED = 0
                 
-                """if (is_rfid_codes_match(rfid_code,CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
-                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
-                    logger.debug("Restoring playing RFID")
-                    ## put the previously playing album rfid back so that the user 
-                    ## can put the album card back on without restarting the album
-                    CURRRENT_RFID = PREVIOUS_RFID
-                    ## Now pause so that you don't re-read the card again. 
-                 """   #time.sleep(1.5)
-                
+    
                 
                 
             elif (rfid_code == CURRRENT_RFID):
@@ -525,10 +572,110 @@ def alchemy_app_runtime():
                     ## So we need to tell the app it's no longer the current
                     ## card so it will be treated as new the next time it is seen 
                     CURRRENT_RFID = 0
+                    PREVIOUS_RFID = 0 """
+            ## TAGS will only be read once     
+            if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
+                is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
+                ## you just read a command card that needs to work while an album is playing.
+                
+                if ( rfid_code != LAST_COMMAND_CARD ):
+                    ## you read a command code you haven't seen reciently.
+                    logger.debug(f'RFID Read: COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK')
+                    LAST_COMMAND_CARD = rfid_code
+                    handle_rfid_read(rfid_code)      
+                
+                ## Lets set the timeout counter for this command card to 0 so we 
+                ## restart counting when the card is removed. 
+                COUNT_SINCE_COMMAND_CARD_REMOVED = 0
+                              
+            
+            elif (rfid_code != CURRRENT_RFID and rfid_code != None):  
+                ## you just read a new card!!!
+                """if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
+                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
+                    logger.debug("Backing up playing RFID")
+                    ## lets save the current RFID since this is a command card 
+                    ## that acts on the currently playing album
+                    PREVIOUS_RFID = CURRRENT_RFID 
+                else:
                     PREVIOUS_RFID = 0
+                    logger.debug("Not the command code you're looking for.")"""
+                                      
+                ## record this as the last rfid read            
+                CURRRENT_RFID = rfid_code
+                logger.info(f'RFID Read: {rfid_code}')
+                
+                
+                ## deal with the card            
+                handle_rfid_read(rfid_code)
 
 
+                ##reset the card removed counter so we don't invalidate this card
+                COUNT_SINCE_CARD_REMOVED = 0
+                
+                ## now reset the last command card in case one was just before putting this card on.
+                LAST_COMMAND_CARD = 0
+                
+                
+                """if (is_rfid_codes_match(rfid_code,CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
+                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
+                    logger.debug("Restoring playing RFID")
+                    ## put the previously playing album rfid back so that the user 
+                    ## can put the album card back on without restarting the album
+                    CURRRENT_RFID = PREVIOUS_RFID
+                    ## Now pause so that you don't re-read the card again. 
+                 """   #time.sleep(1.5)   
+                
+            elif (rfid_code == CURRRENT_RFID):
+                ## You've already read this card but just in case there was a blip
+                ## where the reader missed it for a second, lets remind the app
+                ## that we can still see it.
+                ##
+                ## We reset the counter so that the card really has to be off the 
+                ## devide for a duration of at least LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
+                COUNT_SINCE_CARD_REMOVED = 0
+                LAST_COMMAND_CARD = 0
+                
+            elif (CURRRENT_RFID !=0 and rfid_code == None and not aaplayer.is_playing()):
+                ## The card has been removed from the reader and
+                ## the player is not playing
+                COUNT_SINCE_CARD_REMOVED = COUNT_SINCE_CARD_REMOVED +1
+                
+                if COUNT_SINCE_CARD_REMOVED >= NO_CARD_THREASHOLD:
+                    ## the card has been off the player for at least
+                    ## LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
+                    ##
+                    ## So we need to tell the app it's no longer the current
+                    ## card so it will be treated as new the next time it is seen 
+                    CURRRENT_RFID = 0
+                    
+                    ## invalidate any command card that was on here before
+                    LAST_COMMAND_CARD = 0
+                    
+            elif (LAST_COMMAND_CARD !=0 and rfid_code == None):
+                ## there's no card. Something might be playing and something might not be playing, but
+                ## either way there's no card so let's time out any command cards that  
+                COUNT_SINCE_COMMAND_CARD_REMOVED = COUNT_SINCE_COMMAND_CARD_REMOVED +1
+                
+                ## enough time has passed without a command card. we can invalidate it now.
+                if COUNT_SINCE_COMMAND_CARD_REMOVED >= NO_CARD_THREASHOLD:
+                    ## invalidate any command card that was on here before
+                    LAST_COMMAND_CARD = 0
+
+
+            ## TODO You can put logic right to enable the email current track logic to work. 
+            ## you'd need to have cached the current album and then compare it to the one that's playing after
+            ## this is called.
+            ##
+            ## however, you can also just pause the player for 3 seconds with the cards off and then you'll be able to 
+            ## use the email card again without an issue.
+            
+            ## I switched the logic to just reset the command card if its off the player for 1 second, 
+            ## so there's no longer a need to check if the track actually changed. Thus there used to be
+            ## an if check here, but I removed it. 
             aaplayer.keep_playing()
+                ## you got a new track
+            #    LAST_COMMAND_CARD = 0
             
             
             
@@ -540,8 +687,7 @@ def alchemy_app_runtime():
                 ## isn't playing. We don't want anything messing up the music
                 check_album_of_the_day_email()
             
-            
-            
+        
             time.sleep(LOOP_SLEEP_DURATION)
         logger.debug('APP_RUNNING = False While Loop Completed. RFID Reader')
     except KeyboardInterrupt:
@@ -1455,6 +1601,7 @@ def check_album_of_the_day_email():
         set_album_of_the_day_date_and_rfid()
         
         
+        
         #new_seed = get_album_of_the_day_rfid()
 
         if ALBUM_OF_THE_DAY_LAST_EMAIL_DATE != ALBUM_OF_THE_DAY_DATE:
@@ -1499,7 +1646,11 @@ def send_album_of_the_day_email(rfid):
     album_folder_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'folder'))
     artist_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Artist'))
     album_url = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'url'))
-    
+    subject = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'aotd_greeting'))
+
+    if (subject == BLANK):
+        subject = album_name
+
 
     body = f"""Today's album of the day is:<br><br>
     &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"""
@@ -1541,7 +1692,7 @@ def send_album_of_the_day_email(rfid):
     #msg['From'] = Header(f'{CONFIG.EMAIL_SENDER_NAME} <{CONFIG.EMAIL_SENDER_ADDRESS}>', 'utf-8')  # Set sender name here
     
                       
-    msg['Subject'] = album_name
+    msg['Subject'] = subject
     msg['From'] = CONFIG.EMAIL_SENDER_NAME
     msg['To'] = CONFIG.EMAIL_SEND_TO  # The receiver's email
 
@@ -1634,7 +1785,19 @@ def check_aotd_cache_for_today(date_to_check):
     else:
         return None
 
-
+    
+def get_last_aotd_cache_date():
+    """
+    Gets the date string for the last album of the day that was recorded.
+    
+    Returns: The last date an album of th day was recorded. None otherwise
+    """
+    global DB_AOTD_CACHE
+    
+    if not DB_AOTD_CACHE.empty:
+        return DB_AOTD_CACHE['date'].iloc[-1]
+    else:
+        return None
 
 def send_email_with_current_track(current_track_for_email):
     """
@@ -1707,8 +1870,8 @@ def validate_seed(value):
         raise argparse.ArgumentTypeError("seed must be in 8-digit format")
     return value
 
-def main(email_flag_set, date_seed, email_today_set):
-    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_TODAY
+def main(email_flag_set, date_seed, email_today_set, webdb_set):
+    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_TODAY, FLAG_LOAD_DB_FROM_THE_WEB
     
     if email_flag_set:
         print("The AOTD will be sent.")
@@ -1722,6 +1885,13 @@ def main(email_flag_set, date_seed, email_today_set):
         FLAG_AOTD_SEND_TODAY = True
     else:
         print("First AOTD email will be sent tomorrow.")
+        
+        
+    if webdb_set:
+        print("Will load the DB from the web")
+        FLAG_LOAD_DB_FROM_THE_WEB = True
+    else:
+        print("The DB will be loaded from cache if possible.")
             
     if date_seed != None:
         print(f'Using provided date seed {date_seed}')
@@ -1729,9 +1899,17 @@ def main(email_flag_set, date_seed, email_today_set):
     else:
         print(f'No seed provided. Using the real date.')
         
-    
-    alchemy_app_runtime()
-    
+    try:
+        ## run the app inside this try loop so that we catch 
+        ## any error that kills the app
+        alchemy_app_runtime()
+    except Exception as e:
+        ## if anything goes wrong, write it to a log file.
+        ## Only Errors will be logged. 
+        
+        logger.error(f"An exception occurred: {e}")
+        stack_trace = traceback.format_exc()
+        logger.error(f"{stack_trace}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process some command line parameters and flags.')
@@ -1744,8 +1922,12 @@ if __name__ == "__main__":
 
     # Add the seed parameter with validation but make it optional
     parser.add_argument('--seed', type=validate_seed, help='A seed value in 8-digit format.')
+    
+    # Add the seed parameter with validation but make it optional
+    parser.add_argument('--webdb', action='store_true', help='Tells the application to load the DB from the web.')
+    
 
     args = parser.parse_args()
 
-    main(args.aotd_enabled, args.seed, args.email_today)
+    main(args.aotd_enabled, args.seed, args.email_today, args.webdb)
 
