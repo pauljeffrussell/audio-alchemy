@@ -5,6 +5,7 @@ import time
 import random
 import os
 import time
+import configfile as CONFIG
 #os.environ['SDL_AUDIODRIVER'] = 'dsp'
 
 
@@ -98,17 +99,22 @@ def keep_playing():
     global MUSIC_PAUSED
     #Check if the current track has finished
     
-    busy = pygame.mixer.music.get_busy()
+    #busy = pygame.mixer.music.get_busy()
     
     #logging.debug(f'Next Song? Album in progress: {ALBUM_IN_PROGRESS}    Paused: {MUSIC_PAUSED}  Music Player Busy: {busy}' )
     
     
     if (MUSIC_PAUSED ==0 and pygame.mixer.music.get_busy() == False):
-    #if (ALBUM_IN_PROGRESS == True and MUSIC_PAUSED ==0 and pygame.mixer.music.get_busy() == False):
+        """
+        The music isn't paused and the player isn't busy. So we should 
+        try to play the next track
+        """        
         # Play the next track
         logging.debug(f'Track Ended. Playing Next Track.')
         next_track()
-    
+    #    return True
+    #else:
+    #    return False
 
 """ removed 2023-08-25. Looks like this was replaced by play_tracks a while back.
     def play_folder(folder_path, shuffle, repeat):
@@ -198,6 +204,15 @@ def play_tracks(tracks, repeat):
     TRACK_LIST_ORIGINAL_ORDER = tracks.copy()
     END_TRACK_INDEX = len(TRACK_LIST)
     logging.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
+    
+    
+    ## this should really be done by passing the CONFIG variables into the play tracks
+    ## method, but 
+    if (END_TRACK_INDEX != 0 and CONFIG.FEEDBACK_RECORD_START_ENABLED):
+        ## play the record scratch sound
+        play_feedback(CONFIG.FEEDBACK_RECORD_START)
+        ## now we wait for a bit before starting the album so it sounds like a real record.
+        time.sleep(1.4)
     
     # Play the first track
     #current_track = TRACK_LIST[current_index]
