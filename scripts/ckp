@@ -1,0 +1,140 @@
+#!/bin/bash
+
+# Check for the process, excluding the grep itself
+RESULT=$(ps aux | grep '[a]udioalchemy')
+
+# Count the number of lines in the RESULT
+LINE_COUNT=$(echo "$RESULT" | wc -l)
+
+# Extract the process ID (PID) from the second line
+PID=$(echo "$RESULT" | sed -n '2p' | awk '{print $2}')
+
+# Using grep to search for the timestamp pattern and then getting the last line with tail
+LAST_TIMESTAMP=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' ../test/logs/errors.log | tail -n 1)
+
+# Convert the timestamp to seconds since 1970-01-01
+TIMESTAMP_SECONDS=$(date --date="$LAST_TIMESTAMP" +%s)
+
+# Get the current date in seconds since 1970-01-01
+CURRENT_SECONDS=$(date +%s)
+
+# Calculate the difference in days, rounding up
+DAYS_DIFFERENCE=$(((CURRENT_SECONDS - TIMESTAMP_SECONDS + 24*60*60 - 1) / (24*60*60)))
+
+
+# Get disk usage details for /media/text
+DISK_DETAILS=$(df -h /media/test | tail -1)
+
+# Extract the % full and space remaining in G from the df output
+PERCENT_FULL=$(echo $DISK_DETAILS | awk '{print $5}')
+SPACE_REMAINING=$(echo $DISK_DETAILS | awk '{print $4}')
+
+#ELAPSED_TIME=$(ps -p $PID -o etime=)
+#ELAPSED_TIME=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
+
+# Check if the time includes days
+#if [[ $ELAPSED_TIME == *-* ]]; then
+#    DAYS=$(echo $ELAPSED_TIME | cut -d'-' -f1)
+#    TIME=$(echo $ELAPSED_TIME | cut -d'-' -f2)
+#    ELAPSED_TIME="$DAYS days $TIME"
+#else
+#    ELAPSED_TIME="$ELAPSED_TIME"
+#fi
+
+uptime_output=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
+
+if [ $LINE_COUNT -ge 2 ]; then
+if [[ $uptime_output == *-* ]]; then
+    days=$(echo "$uptime_output" | awk -F- '{print $1}')
+    hours=$(echo "$uptime_output" | awk -F: '{print $1}' | awk -F- '{print $2}')
+    minutes=$(echo "$uptime_output" | awk -F: '{print $2}')
+    seconds=$(echo "$uptime_output" | awk -F: '{print $3}')
+    #uptime_formatted_output="${days} day, ${hours} hours, ${minutes} minutes, ${seconds} seconds"
+    #uptime_formatted_output="${days} day ${hours} hours ${minutes} minutes ${seconds} seconds"
+    uptime_formatted_output="${days} day ${hours}hr ${minutes}min ${seconds}sec"
+else
+    hours=$(echo "$uptime_output" | awk -F: '{print $1}')
+    minutes=$(echo "$uptime_output" | awk -F: '{print $2}')
+    seconds=$(echo "$uptime_output" | awk -F: '{print $3}')
+    uptime_formatted_output="${hours} hours, ${minutes} minutes, ${seconds} seconds"
+fi
+fi
+#echo "$formatted_output"
+
+
+# Check if the argument '-f' is provided
+if [ "$1" == "-f" ]; then
+    #echo -e "\n\n\n"
+    #echo "##########################################"
+    #echo "##                                      ##"
+    #echo "##           Process Info               ##"
+    #echo "##                                      ##"
+    #echo "##########################################"
+    #echo
+    #echo "$RESULT"
+    echo -e "\n\n\n"
+    echo "##########################################"
+    echo "##                                      ##"
+    echo "##            Error Log                 ##"
+    echo "##                                      ##"
+    echo "##########################################"
+    echo
+    tail -n 80 ../test/logs/errors.log
+
+fi
+
+
+echo
+#echo "*****************************"
+#echo "***     AudioAlchemy      ***"
+#echo "*****************************"
+echo
+if [ $LINE_COUNT -ge 2 ]; then
+    echo -e "Alchemy status: \e[1;32mON\e[0m"
+    echo 
+    #ELAPSED_TIME=$(ps -p $PID -o etime=)
+
+    #   ELAPSED_TIME=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
+    echo -e "Uptime: \e[1;32m$uptime_formatted_output\e[0m"
+
+else
+    echo -e "Alchemy is \e[1;31mOFF\e[0m"
+fi
+
+if [ "$1" == "-f" ]; then
+    echo
+    echo "Pid: $PID"
+fi
+
+echo 
+#echo -e "Last error: $DAYS_DIFFERENCE days ago \e[90m$LAST_TIMESTAMP\e[0m"
+if (( DAYS_DIFFERENCE < 1 )); then
+    echo -e "Last error: \e[1;31m$DAYS_DIFFERENCE days ago\e[0m \e[90m$LAST_TIMESTAMP\e[0m"
+else
+    echo -e "Last error: \e[1;32m$DAYS_DIFFERENCE days ago\e[0m \e[90m$LAST_TIMESTAMP\e[0m"
+fi
+
+
+
+
+
+#if [ $LINE_COUNT -ge 2 ]; then
+#    echo
+#    echo "Uptime: $ELAPSED_TIME"     
+#    #echo "pid: $PID"    
+#fi
+
+echo
+echo -e "Library: $PERCENT_FULL full"
+echo    "         $SPACE_REMAINING available"
+# Using grep to search for the timestamp pattern and then getting the last line with tail
+#LAST_TIMESTAMP=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' ../test/logs/errors.log | tail -n 1)
+
+# Outputting the extracted timestamp
+#echo 
+#echo "$DAYS_DIFFERENCE days since last error at $LAST_TIMESTAMP"
+# echo "Last error: $LAST_TIMESTAMP"
+echo
+
+
+
