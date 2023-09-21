@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Get the process list, excluding the grep itself
+RESULT=$(ps aux | grep '[a]udioalchemy')
+
+# Extract the process ID (PID) from the second line
+PID=$(echo "$RESULT" | sed -n '2p' | awk '{print $2}')
+
+if [ -z "$PID" ]; then
+    echo "The application audioalchemy is not running."
+    exit 1
+fi
+
+# Kill the process with the extracted PID
+sudo kill -9 $PID
+
+# Verify if the process was successfully killed
+if [ $? -eq 0 ]; then
+    echo "Successfully killed the audioalchemy process with PID: $PID."
+else
+    echo "Failed to kill the audioalchemy process with PID: $PID."
+fi

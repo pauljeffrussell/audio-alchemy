@@ -1,0 +1,2 @@
+sudo strace -p $(pgrep python3) -s 9999 -e write
+
