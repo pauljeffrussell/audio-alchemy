@@ -2,6 +2,11 @@
 ## This line mounts the new Media drive
 sudo mount /dev/disk/by-uuid/287d419a-a2ea-48bd-b347-2b423a37a108 /media/test
 
+
+## mount the pulse directory  to tmpfs so we don't see all the symlink issues 
+sudo mount -t tmpfs -o size=128M tmpfs /root/.config/pulse
+
+
 ## This line launches the audio alchemy app in the background. 
 sudo /usr/bin/python3 -B /media/audioalchemy/AudioAlchemy.py --aotd_enable &
 
