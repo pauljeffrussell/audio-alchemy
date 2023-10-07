@@ -52,6 +52,7 @@ DEVICE_NAME = 'Audio Adapter (Unitek Y-247A) Mono'
 ## This is True after the tracks have played, until someone starts playing them again.
 #TRACKS_COMPLETE = False
 
+logger = None
 
 # Initialize the current index and current track variables
 current_index = 0
@@ -76,16 +77,20 @@ def startup():
     ## Rinse and repeat until it works.
     while not MIXER_LOADED:
         try:
-            logging.debug("Attempting to load the mixer.")
+            logger.debug("Attempting to load the mixer.")
             pygame.mixer.pre_init(48000, -16, 2, 2048)
             pygame.init()
             pygame.mixer.init()
             pygame.mixer.music.set_volume(1)
-            logging.debug("SUCCESS! The mixer loaded.")
+            logger.debug("SUCCESS! The mixer loaded.")
             MIXER_LOADED = True
         except:
-            logging.debug("Mixer load failed. Retrying in 5 seconds.")
+            logger.debug("Mixer load failed. Retrying in 5 seconds.")
             time.sleep(5)
+
+def set_logger(external_logger):
+    global logger
+    logger = external_logger
 
 
 def is_playing():
@@ -101,7 +106,7 @@ def keep_playing():
     
     #busy = pygame.mixer.music.get_busy()
     
-    #logging.debug(f'Next Song? Album in progress: {ALBUM_IN_PROGRESS}    Paused: {MUSIC_PAUSED}  Music Player Busy: {busy}' )
+    #logger.debug(f'Next Song? Album in progress: {ALBUM_IN_PROGRESS}    Paused: {MUSIC_PAUSED}  Music Player Busy: {busy}' )
     
     
     if (MUSIC_PAUSED ==0 and pygame.mixer.music.get_busy() == False):
@@ -110,7 +115,7 @@ def keep_playing():
         try to play the next track
         """        
         # Play the next track
-        logging.debug(f'Track Ended. Playing Next Track.')
+        logger.debug(f'Track Ended. Playing Next Track.')
         next_track()
     #    return True
     #else:
@@ -125,23 +130,23 @@ def keep_playing():
     if ALBUM_LOADED:
         shutdown_player()
 
-    #logging.debug('Setting Player Running to true')
+    #logger.debug('Setting Player Running to true')
     #PLAYER_RUNNING = True
-    #logging.debug(f'Player Running to {PLAYER_RUNNING}')
+    #logger.debug(f'Player Running to {PLAYER_RUNNING}')
     #ALBUM_SHUFFLE = shuffle
     
     # set this global so the keep playing and next functions know if they should repeat at album end.
     ALBUM_REPEAT = repeat
     
     
-    logging.debug("Initiallizing pygame...")
+    logger.debug("Initiallizing pygame...")
     # Initialize Pygame
     startup()
     #pygame.mixer.pre_init(48000, -16, 2, 2048, DEVICE_NAME)
     #pygame.init()
     #pygame.mixer.init(48000, -16, 1, 1024)
     
-    logging.debug("Completed initializing pygame")
+    logger.debug("Completed initializing pygame")
 
     current_index = 0
     print("folder path: ", folder_path )
@@ -172,7 +177,7 @@ def keep_playing():
     # Load the current track
     
     play_current_track()
-    #logging.info(f'Loading track {current_track}')
+    #logger.info(f'Loading track {current_track}')
     #pygame.mixer.music.load(current_track)
     #pygame.mixer.music.play()
     MUSIC_PAUSED = 0
@@ -193,9 +198,9 @@ def play_tracks(tracks, repeat):
     ALBUM_REPEAT = repeat
     
     # Initialize Pygame    
-    logging.debug("Initiallizing pygame...")
+    logger.debug("Initiallizing pygame...")
     startup()
-    logging.debug("Completed initializing pygame")
+    logger.debug("Completed initializing pygame")
 
     current_index = 0
     
@@ -203,7 +208,7 @@ def play_tracks(tracks, repeat):
     TRACK_LIST = tracks
     TRACK_LIST_ORIGINAL_ORDER = tracks.copy()
     END_TRACK_INDEX = len(TRACK_LIST)
-    logging.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
+    logger.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
     
     
     ## this should really be done by passing the CONFIG variables into the play tracks
@@ -234,11 +239,11 @@ def jump_to_next_album():
     while next_index < len(file_paths):
         next_directory = os.path.dirname(file_paths[next_index])
         if next_directory != current_directory:
-            logging.debug(f'New Index Found {next_index}...')
+            logger.debug(f'New Index Found {next_index}...')
             jump_to_track(next_index)
             return 1     
         next_index += 1
-    logging.debug(f'Returning to Index 0...')  
+    logger.debug(f'Returning to Index 0...')  
     jump_to_track(0)   # No different directory found after the given index
 
 
@@ -272,11 +277,11 @@ def jump_to_previous_album():
             # now find the first track of that previous album
             album_first_track = get_index_of_first_track(prev_directory)
             
-            logging.debug(f'New Index Found {album_first_track}...')
+            logger.debug(f'New Index Found {album_first_track}...')
             jump_to_track(album_first_track)
             return 1     
         prev_index -= 1
-    logging.debug(f'Returning to Index 0...')  
+    logger.debug(f'Returning to Index 0...')  
     jump_to_track(0)   # No different directory found after the given index
 
 
@@ -310,11 +315,11 @@ def play_in_order_from_random_track():
     
     try:
         new_track_index = random.randint(0, len(TRACK_LIST) - 1)
-        logging.debug(f'Jumping to track: {new_track_index} and continuing to play in order...')
+        logger.debug(f'Jumping to track: {new_track_index} and continuing to play in order...')
         jump_to_track(new_track_index)
         ALBUM_REPEAT = True
     except:
-        logging.error("Unable to jump to a random track. There was a problem picking a random index.")
+        logger.error("Unable to jump to a random track. There was a problem picking a random index.")
         
 
 
@@ -348,7 +353,7 @@ def pause_track():
     global MUSIC_PAUSED
     MUSIC_PAUSED = 1
     pygame.mixer.music.pause()
-    logging.info('Pausing album.')
+    logger.info('Pausing album.')
 
 def play_current_track():
     global TRACK_LIST, current_index, MUSIC_PAUSED
@@ -357,11 +362,11 @@ def play_current_track():
     try:
         MUSIC_PAUSED = 0
         current_track = TRACK_LIST[current_index]
-        logging.info(f'Starting: {current_track}')
+        logger.info(f'Starting: {current_track}')
         pygame.mixer.music.load(current_track)
         pygame.mixer.music.play()
-    except:
-        logging.debug("Couldn't play current track")
+    except Exception as e:
+        logger.error(f'Unable to play track "{current_track}" {e} ')
     
 
 def get_current_track():
@@ -404,23 +409,47 @@ def next_track():
         current_index = 0
         play_current_track()
         pause_track()
-        logging.info(f'Reached end of album. Press play to restart album.')
+        logger.info(f'Reached end of album. Press play to restart album.')
     else:
         # Load and play the next track
         play_current_track()
 
-
+"""
+        
+"""
 def prev_track():
+    """
+    If the current track has been playing for more than 10 seconds this brings the user back 
+    to the beginning of the currently playing track
+    
+    If the current track has been playing for less than 10 seconds it brings you to the previous 
+    track.
+    """
     global current_index, TRACK_LIST, MUSIC_PAUSED
+  
+    position = pygame.mixer.music.get_pos()
+      
   
     MUSIC_PAUSED = 0
     # Stop the mixer
+    
     pygame.mixer.music.stop()
     
-    # Get the previous index
-    current_index -= 1
-    if current_index < 0:
-        current_index = len(TRACK_LIST) - 1
+    
+    ## this checks how many miliseconds into the song
+    
+    logger.debug(f'Music Position: {position}')
+    
+    ## the player has reached.
+    if (position < 6000):
+        ## if the track has been playing for less than 6 seconds
+        ## Go to the previous track
+        current_index -= 1
+        if current_index < 0:
+            current_index = len(TRACK_LIST) - 1
+        
+        ## Otherwise we'll just go back to the beginning of the current 
+        ## track and start playing it again.
     
     # Load and play the previous track
     current_track = TRACK_LIST[current_index]
@@ -430,13 +459,16 @@ def prev_track():
 
 def play_feedback(feedback_file):
     
-    feedback_audio = pygame.mixer.Sound(feedback_file)
-    feedback_audio.play()
-
+    try:
+        feedback_audio = pygame.mixer.Sound(feedback_file)
+        feedback_audio.play()
+    except Exception as e:
+        logger.error(f'Unable to play feedback sound "{feedback_file}" {e} ')
+        
 def shutdown_player():
     #global PLAYER_RUNNING
     #PLAYER_RUNNING = False
-    logging.debug('Starting Player Shutdown')
+    logger.debug('Starting Player Shutdown')
     
     # Define custom event constant
     #MY_CUSTOM_EVENT = pygame.USEREVENT + 1
@@ -444,7 +476,7 @@ def shutdown_player():
     #time.sleep(3)
     pygame.mixer.music.stop()
     pygame.quit()
-    logging.debug('Completed Player Shutdown')
+    logger.debug('Completed Player Shutdown')
     
 
 

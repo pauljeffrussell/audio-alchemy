@@ -1,16 +1,26 @@
 #!/bin/bash
 
+# Define colors
+GREEN='\033[1;32m'
+RED='\033[1;31m'
+NC='\033[0m' # No Color
+GREY='\033[90m'
+
 # Check for the process, excluding the grep itself
 RESULT=$(ps aux | grep '[a]udioalchemy')
-
+#echo "RESULT = $RESULT"
 # Count the number of lines in the RESULT
 LINE_COUNT=$(echo "$RESULT" | wc -l)
+
+#echo "LINE_COUNT $LINE_COUNT"
 
 # Extract the process ID (PID) from the second line
 PID=$(echo "$RESULT" | sed -n '2p' | awk '{print $2}')
 
+#echo "PID: $PID"
+
 # Using grep to search for the timestamp pattern and then getting the last line with tail
-LAST_TIMESTAMP=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' ../test/logs/errors.log | tail -n 1)
+LAST_TIMESTAMP=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' ./logs/errors.log | tail -n 1)
 
 # Convert the timestamp to seconds since 1970-01-01
 TIMESTAMP_SECONDS=$(date --date="$LAST_TIMESTAMP" +%s)
@@ -22,27 +32,9 @@ CURRENT_SECONDS=$(date +%s)
 DAYS_DIFFERENCE=$(((CURRENT_SECONDS - TIMESTAMP_SECONDS + 24*60*60 - 1) / (24*60*60)))
 
 
-# Get disk usage details for /media/text
-DISK_DETAILS=$(df -h /media/test | tail -1)
-
-# Extract the % full and space remaining in G from the df output
-PERCENT_FULL=$(echo $DISK_DETAILS | awk '{print $5}')
-SPACE_REMAINING=$(echo $DISK_DETAILS | awk '{print $4}')
-
-#ELAPSED_TIME=$(ps -p $PID -o etime=)
-#ELAPSED_TIME=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
-
-# Check if the time includes days
-#if [[ $ELAPSED_TIME == *-* ]]; then
-#    DAYS=$(echo $ELAPSED_TIME | cut -d'-' -f1)
-#    TIME=$(echo $ELAPSED_TIME | cut -d'-' -f2)
-#    ELAPSED_TIME="$DAYS days $TIME"
-#else
-#    ELAPSED_TIME="$ELAPSED_TIME"
-#fi
-
+: <<'END_COMMENT'
 uptime_output=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
-
+#echo "uptime_output $uptime_output"
 if [ $LINE_COUNT -ge 2 ]; then
 if [[ $uptime_output == *-* ]]; then
     days=$(echo "$uptime_output" | awk -F- '{print $1}')
@@ -51,7 +43,17 @@ if [[ $uptime_output == *-* ]]; then
     seconds=$(echo "$uptime_output" | awk -F: '{print $3}')
     #uptime_formatted_output="${days} day, ${hours} hours, ${minutes} minutes, ${seconds} seconds"
     #uptime_formatted_output="${days} day ${hours} hours ${minutes} minutes ${seconds} seconds"
-    uptime_formatted_output="${days} day ${hours}hr ${minutes}min ${seconds}sec"
+
+    # Decide whether to use "day" or "days"
+    if [ "$days" -eq 1 ]; then
+      day_word="day"
+    else
+      day_word="days"
+    fi
+
+
+
+    uptime_formatted_output="${days}${day_word} ${hours}hr ${minutes}min ${seconds}sec"
 else
     hours=$(echo "$uptime_output" | awk -F: '{print $1}')
     minutes=$(echo "$uptime_output" | awk -F: '{print $2}')
@@ -59,7 +61,56 @@ else
     uptime_formatted_output="${hours} hours, ${minutes} minutes, ${seconds} seconds"
 fi
 fi
-#echo "$formatted_output"
+echo "$uptime_formatted_output"
+END_COMMENT
+
+
+uptime_output=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
+
+if [ $LINE_COUNT -ge 2 ]; then
+    if [[ $uptime_output == *-* ]]; then
+        days=$(echo "$uptime_output" | cut -d- -f1)
+        time=$(echo "$uptime_output" | cut -d- -f2)
+    else
+        days=0
+        time=$uptime_output
+    fi
+    
+    IFS=: read -ra parts <<< "$time"
+    
+    # Determine the number of parts
+    num_parts=${#parts[@]}
+    
+    if [ $num_parts -eq 3 ]; then
+        hours=${parts[0]}
+        minutes=${parts[1]}
+        seconds=${parts[2]}
+    elif [ $num_parts -eq 2 ]; then
+        hours=0
+        minutes=${parts[0]}
+        seconds=${parts[1]}
+    else
+        hours=0
+        minutes=0
+        seconds=${parts[0]}
+    fi
+    
+    # Decide whether to use "day" or "days"
+    if [ "$days" -eq 1 ]; then
+        day_word="day"
+    else
+        day_word="days"
+    fi
+    
+    if [ "$days" -eq 0 ]; then
+        uptime_formatted_output="${hours}hr ${minutes}min ${seconds}sec"
+    else
+        uptime_formatted_output="${days}${day_word} ${hours}hr ${minutes}min ${seconds}sec"
+    fi
+fi
+
+#echo "$uptime_formatted_output"
+
 
 
 # Check if the argument '-f' is provided
@@ -79,10 +130,9 @@ if [ "$1" == "-f" ]; then
     echo "##                                      ##"
     echo "##########################################"
     echo
-    tail -n 80 ../test/logs/errors.log
+    tail -n 80 ./logs/errors.log
 
 fi
-
 
 echo
 #echo "*****************************"
@@ -90,12 +140,9 @@ echo
 #echo "*****************************"
 echo
 if [ $LINE_COUNT -ge 2 ]; then
-    echo -e "Alchemy status: \e[1;32mON\e[0m"
-    echo 
-    #ELAPSED_TIME=$(ps -p $PID -o etime=)
+    echo -e "Alchemy status: ${GREEN}ON${NC}  ${GREY}$uptime_formatted_output${NC}"
 
-    #   ELAPSED_TIME=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
-    echo -e "Uptime: \e[1;32m$uptime_formatted_output\e[0m"
+    #echo -e "Uptime: \e[1;32m$uptime_formatted_output\e[0m"
 
 else
     echo -e "Alchemy is \e[1;31mOFF\e[0m"
@@ -107,34 +154,168 @@ if [ "$1" == "-f" ]; then
 fi
 
 echo 
-#echo -e "Last error: $DAYS_DIFFERENCE days ago \e[90m$LAST_TIMESTAMP\e[0m"
 if (( DAYS_DIFFERENCE < 1 )); then
-    echo -e "Last error: \e[1;31m$DAYS_DIFFERENCE days ago\e[0m \e[90m$LAST_TIMESTAMP\e[0m"
+    echo -e "Last error: \e[1;31m$DAYS_DIFFERENCE days ago\e[0m  \e[90m$LAST_TIMESTAMP\e[0m"
 else
-    echo -e "Last error: \e[1;32m$DAYS_DIFFERENCE days ago\e[0m \e[90m$LAST_TIMESTAMP\e[0m"
+    echo -e "Last error: \e[1;32m$DAYS_DIFFERENCE days ago\e[0m  \e[90m$LAST_TIMESTAMP\e[0m"
 fi
 
 
 
 
+# Get the memory usage
+total_memory=$(free -m | awk 'NR==2{print $2}')
+used_memory=$(free -m | awk 'NR==2{print $3}')
+free_memory=$(free -m | awk 'NR==2{print $4 " MB"}')
+available_memory=$(free -m | awk 'NR==2{print $7}')
+used_memory_percentage=$(awk -v used="$used_memory" -v total="$total_memory" 'BEGIN {printf "%.1f", (used / total) * 100}')
 
-#if [ $LINE_COUNT -ge 2 ]; then
-#    echo
-#    echo "Uptime: $ELAPSED_TIME"     
-#    #echo "pid: $PID"    
+if [ -n "$used_memory_percentage" ] && [ $(echo "$used_memory_percentage < 30.0" | bc -l) -eq 1 ]
+then
+  color=$GREEN
+else
+  color=$RED
+fi
+
+
+
+# Print the results
+echo
+echo -e "Memory Usage: ${color}$used_memory_percentage%${NC}  ${GREY}${available_memory}MB free${NC}"
+
+
+
+# Get the number of CPU cores
+num_cores=$(nproc)
+
+# Get the load averages
+read one_minute five_minute fifteen_minute rest < /proc/loadavg
+
+# Calculate the Rough CPU Utilization Estimate
+one_minute_util=$(echo "scale=2; ($one_minute / $num_cores) * 100" | bc)
+five_minute_util=$(echo "scale=2; ($five_minute / $num_cores) * 100" | bc)
+fifteen_minute_util=$(echo "scale=2; ($fifteen_minute / $num_cores) * 100" | bc)
+
+# Get the CPU usage
+cpu_usage=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}')
+
+
+echo
+if (( $(echo "$five_minute_util < 20.0" | bc -l) )) && (( $(echo "$cpu_usage < 45.0" | bc -l) ))
+then
+  color=$GREEN
+  echo -e "CPU Usage: ${color}$cpu_usage%${NC}  ${GREY}$five_minute_util% five min avg${NC}"
+else
+  color=$RED
+  echo -e "CPU Usage: ${color}$cpu_usage%  $five_minute_util% five min avg${NC}"
+fi
+
+
+echo 
+# Use vcgencmd to get the temperature and use awk to parse the output
+TEMP=$(vcgencmd measure_temp | awk -F"=" '{print $2}' | awk -F"'" '{print $1}')
+
+# ANSI escape codes for colors
+
+# Check the temperature and set the output color
+if (( $(echo "$TEMP > 60" | bc -l) )); then
+    echo -e "Temp: ${RED}$TEMP${NC}"
+else
+    echo -e "Temp: ${GREEN}$TEMP${NC}"
+fi
+
+# Get disk usage details for /media/text
+DISK_DETAILS=$(df -h /media/test | tail -1)
+
+# Extract the % full and space remaining in G from the df output
+PERCENT_FULL=$(echo $DISK_DETAILS | awk '{gsub(/%/,"", $5); print $5}')
+
+#PERCENT_FULL=$(echo $DISK_DETAILS | awk '{print $5}')
+SPACE_REMAINING=$(echo $DISK_DETAILS | awk '{print $4}')
+
+if (( $(echo "$PERCENT_FULL < 85" | bc -l) )) 
+then
+  color=$GREEN
+else
+  color=$RED
+fi
+
+
+echo
+
+#echo -e "Library: ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
+
+#echo
+
+
+DIR="../test/library"
+
+if [[ -r "$DIR" ]]; then
+    # Try to list the contents of the directory to verify it's actually readable
+    ls "$DIR" > /dev/null 2>&1
+    if [[ $? -eq 0 ]]; then
+        echo -e "Library: ${GREEN}Connected${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
+    else
+        echo -e "Library: ${RED}Drive not readable or has I/O error${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
+    fi
+else
+    echo -e "Library: ${RED}Drive not mounted${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
+fi
+
+#if [[ -r "$DIR" ]]; then
+#    echo -e "Library: ${GREEN}Connected${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
+#else
+#    echo -e "Library: ${RED}Drive not mounted${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
 #fi
 
 echo
-echo -e "Library: $PERCENT_FULL full"
-echo    "         $SPACE_REMAINING available"
-# Using grep to search for the timestamp pattern and then getting the last line with tail
-#LAST_TIMESTAMP=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' ../test/logs/errors.log | tail -n 1)
 
-# Outputting the extracted timestamp
-#echo 
-#echo "$DAYS_DIFFERENCE days since last error at $LAST_TIMESTAMP"
-# echo "Last error: $LAST_TIMESTAMP"
+
+# Read the last line of the specified file
+line=$(tail -n 1 /media/audioalchemy/dbcache/aotdcache.csv)
+
+# Extract and format the date and extract the third value
+formatted_date=$(echo "$line" | awk -F, '{ printf "%s-%s-%s", substr($1,1,4), substr($1,5,2), substr($1,7,2) }')
+third_value=$(echo "$line" | awk -F, '{ print $3 }')
+
+# Get today's date in YYYY-MM-DD format
+#today=$(date +"%Y-%m-%d"
+
+
+# Fetch the date string from worldtimeapi for the America/New_York time zone
+response=$(curl -s http://worldtimeapi.org/api/timezone/America/New_York)
+
+# Extract the datetime string using bash string manipulation
+datetime_str=${response#*\"datetime\":\"}
+datetime_str=${datetime_str%%\"*}
+
+# Extract date from datetime string
+today=${datetime_str%%T*}
+
+#today="2023-09-25"
+
+#echo -e "Today ${today}"
+
+
+# Parse the JSON response to extract the datetime
+#datetime=$(echo $json_response | jq -r '.datetime')
+
+# Format the datetime to YYYY-MM-DD
+#today=$(date -d"$datetime" +"%Y-%m-%d")
+
+
+
+
+
+# Compare the dates and print in red if they do not match, otherwise print normally
+if [ "$formatted_date" != "$today" ]; then
+    color=$RED
+    message=" AOTD is out of date."
+
+else
+    color=$GREEN
+    message=""
+fi
+
+echo -e "AOTD: ${color}$formatted_date${message}${NC}  ${GREY}$third_value${NC}"
 echo
-
-
-

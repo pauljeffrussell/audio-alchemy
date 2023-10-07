@@ -477,8 +477,12 @@ def alchemy_app_runtime():
     start_button_controls()
 
 
-    #set up the muisc player
+    #set the logger for the music player
+    aaplayer.set_logger(logger)
+
+    #set up the music player
     aaplayer.startup()
+    
 
     reader = SimpleMFRC522()
     
@@ -524,55 +528,7 @@ def alchemy_app_runtime():
             ## read the RFID from the reader
             rfid_code = reader.read_id_no_block()
         
-            """
-            This is the code that was working before 2023-09-17 
-            I'm going to try ti nake it handle command cards better below. 
-            
-            ## TAGS will only be read once 
-            if (rfid_code != CURRRENT_RFID and rfid_code != PREVIOUS_RFID and rfid_code != None):  
-                ## you just read a new card!!!
-                if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
-                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
-                    logger.debug("Backing up playing RFID")
-                    ## lets save the current RFID since this is a command card 
-                    ## that acts on the currently playing album
-                    PREVIOUS_RFID = CURRRENT_RFID 
-                else:
-                    PREVIOUS_RFID = 0
-                    logger.debug("Not the command code you're looking for.")
-                                      
-                
-                
-                CURRRENT_RFID = rfid_code
-                logger.info(f'RFID Read: {rfid_code}')
-                handle_rfid_read(rfid_code)
-                COUNT_SINCE_CARD_REMOVED = 0
-                
-    
-                
-                
-            elif (rfid_code == CURRRENT_RFID):
-                ## You've already read this card but just in case there was a blip
-                ## where the reader missed it for a second, lets remind the app
-                ## that we can still see it.
-                ##
-                ## We reset the counter so that the card really has to be off the 
-                ## devide for a duration of at least LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
-                COUNT_SINCE_CARD_REMOVED = 0
-                
-            elif (CURRRENT_RFID !=0 and rfid_code == None and not aaplayer.is_playing()):
-                ## The card has been removed from the reader and
-                ## the player is not playing
-                COUNT_SINCE_CARD_REMOVED = COUNT_SINCE_CARD_REMOVED +1
-                
-                if COUNT_SINCE_CARD_REMOVED >= NO_CARD_THREASHOLD:
-                    ## the card has been off the player for at least
-                    ## LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
-                    ##
-                    ## So we need to tell the app it's no longer the current
-                    ## card so it will be treated as new the next time it is seen 
-                    CURRRENT_RFID = 0
-                    PREVIOUS_RFID = 0 """
+
             ## TAGS will only be read once     
             if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
                 is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
@@ -1212,6 +1168,11 @@ def get_tracks(folders, shuffle_tracks):
             album_songs = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.splitext(f)[1] in SUPPORTED_EXTENSIONS]
             album_songs.sort()
             all_tracks.extend(album_songs)
+        else:
+            ## if you were asked to find a folder, then it should exist. 
+            ## If it doesn't exist, say something log the error so it's known. 
+            logger.error(f'Could not find folder: {folder}')
+        
         
     if(shuffle_tracks == True):
         random.shuffle(all_tracks)  
@@ -1652,25 +1613,31 @@ def send_album_of_the_day_email(rfid):
         subject = album_name
 
 
-    body = f"""Today's album of the day is:<br><br>
-    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"""
+    body = f"""<div style="font-size: .8em;">Today's album of the day is:</div><br>"""
     
     if album_url != "":
         body = body + f'<a href="{album_url}">'
     
-    body = body + f"""<b style="font-size: 2em;">{album_name}"""
-    if album_url != "":
-        body = body + f'</a>'
-    
-    if (artist_name != "" or artist_name == "Various Artists"):
-        body = body + "<BR>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;by " + artist_name
+    body = body + f"""<b style="font-size: 1.6em;">{album_name}</b>"""
+
+    if (artist_name != "" and artist_name != "Various Artists"):
+        body = body + "<BR>"
+
+        body = body + '<div style="font-size: 1em; padding-top:.5em;padding-left: 2.5em;">'
+        body = body + "by "  + artist_name + "</div>"
         
     if album_url != "":
         body = body + f'</a>'
 
         
-    body = body + f"""</b><BR><BR><BR><BR>
-    <div style="font-size: smaller; color: grey;">Use the hammer to play the album.</div>"""
+    body = body + f"""</b>
+    <BR><BR><BR><BR>
+    <BR><BR><BR><BR>
+    <BR><BR><BR><BR>
+    <BR><BR><BR><BR>
+    <div style="font-size: smaller; color: grey;">Use the hammer to play the album.</div>
+    <BR><BR><BR><BR>
+    """
     
     
     
