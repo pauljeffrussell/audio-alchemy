@@ -194,8 +194,7 @@ def play_tracks(tracks, repeat):
     if ALBUM_LOADED:
         shutdown_player()
 
-    # set this global so the keep playing and next functions know if they should repeat at album end.
-    ALBUM_REPEAT = repeat
+
     
     # Initialize Pygame    
     logger.debug("Initiallizing pygame...")
@@ -210,6 +209,8 @@ def play_tracks(tracks, repeat):
     END_TRACK_INDEX = len(TRACK_LIST)
     logger.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
     
+    # set this global so the keep playing and next functions know if they should repeat at album end.
+    ALBUM_REPEAT = repeat
     
     ## this should really be done by passing the CONFIG variables into the play tracks
     ## method, but 
@@ -358,7 +359,7 @@ def pause_track():
 def play_current_track():
     global TRACK_LIST, current_index, MUSIC_PAUSED
     
-    
+    current_track = None
     try:
         MUSIC_PAUSED = 0
         current_track = TRACK_LIST[current_index]
@@ -366,7 +367,11 @@ def play_current_track():
         pygame.mixer.music.load(current_track)
         pygame.mixer.music.play()
     except Exception as e:
-        logger.error(f'Unable to play track "{current_track}" {e} ')
+        if (current_track == None):
+            logger.error(f'Unable to play track at index "{current_index}" {e} ')
+        else:
+            logger.error(f'Unable to play track "{current_track}" {e} ')
+        
     
 
 def get_current_track():
@@ -410,6 +415,11 @@ def next_track():
         play_current_track()
         pause_track()
         logger.info(f'Reached end of album. Press play to restart album.')
+    elif (ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
+        ## The album reached it's end and should now restart
+        current_index = 0
+        play_current_track()
+        logger.info(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
     else:
         # Load and play the next track
         play_current_track()
