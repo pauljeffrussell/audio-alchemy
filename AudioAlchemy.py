@@ -1056,7 +1056,6 @@ def is_album_repeat(rfid_code):
     Returns:
     Boolean: True if the albums should repeat. False otherwise.            
     """
-    global DB
     
     repeat = lookup_field_by_field(DB, 'rfid', rfid_code, 'repeat')  
     if repeat == 1:
