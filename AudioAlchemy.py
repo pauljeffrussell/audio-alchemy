@@ -219,12 +219,19 @@ def load_database(LOAD_FROM_WEB):
         ## they didn't tell us to use the web so we'll use the cache
         if os.path.exists(DB_CACHE):
             logging.debug(f'Attempting to load the DB from {DB_CACHE}')
-            DB = pd.read_csv(DB_CACHE)
             
-            DB = pd.read_csv(DB_CACHE, dtype={'genre_card': float, 'label_card': float, \
-                                              'shuffle_albums': float, 'shuffle_songs': float, \
-                                              'repeat': float, 'christmas_aotd': float, \
-                                              'exclude_from_random': float, 'aotd_date': str, 'rfid': str} )
+            
+            
+            DB = read_db(DB_CACHE)
+            ## 2023-11-11 replaced with the above helper function so that 
+            ## I don't have the same code in 2 places. Also, I don't know why I previously had 2 read lines below.
+            ## looks like a previous oversignt.
+            ##            
+            #DB = pd.read_csv(DB_CACHE)
+            #DB = pd.read_csv(DB_CACHE, dtype={'genre_card': float, 'label_card': float, \
+            #                                  'shuffle_albums': float, 'shuffle_songs': float, \
+            #                                  'repeat': float, 'christmas_aotd': float, \
+            #                                  'exclude_from_random': float, 'aotd_date': str, 'rfid': str, 'loaded': float} )
             
    
             
@@ -266,11 +273,15 @@ def load_database(LOAD_FROM_WEB):
             logger.debug('ready to read the csv from url.')
             #DB = pd.read_csv(db_url)
             
-            DB = pd.read_csv(db_url, dtype={'genre_card': float, 'label_card': float, \
-                                              'shuffle_albums': float, 'shuffle_songs': float, \
-                                              'repeat': float, 'christmas_aotd': float, \
-                                              'exclude_from_random': float, 'aotd_date': str, 'rfid': str, \
-                                              'aotd_greeting': str} )
+            DB = read_db(db_url)
+            
+            ## 2023-11-11 replaced with the above helper function so that 
+            ## I don't have the same code in 2 places
+            #DB = pd.read_csv(db_url, dtype={'genre_card': float, 'label_card': float, \
+            #                                  'shuffle_albums': float, 'shuffle_songs': float, \
+            #                                  'repeat': float, 'christmas_aotd': float, \
+            #                                  'exclude_from_random': float, 'aotd_date': str, 'rfid': str, \
+            #                                  'aotd_greeting': str, 'loaded': float} )
             
             logging.debug("SUCCESS! The DB loaded from the web.")
             
@@ -298,6 +309,21 @@ def load_database(LOAD_FROM_WEB):
             logging.debug("DB load failed. Retrying in 3 seconds.")
             time.sleep(3)
 
+
+def read_db(csv):
+    """
+    read in the db and return a pandas dataframe 
+    with typed fields the way the ap expects it
+    """
+    return pd.read_csv(csv, dtype={'genre_card': float, 'label_card': float, \
+                                   'shuffle_albums': float, 'shuffle_songs': float, \
+                                   'repeat': float, 'christmas_aotd': float, \
+                                   'exclude_from_random': float, 'aotd_date': str, \
+                                   'rfid': str, 'loaded_hq': str} )
+            
+    
+   
+
 def clean_up_catalog_db_column_types():
     """
     This function cleans up the columns coming from the google sheet. One stray space in a column 
@@ -311,6 +337,7 @@ def clean_up_catalog_db_column_types():
     DB['folder'] = DB['folder'].fillna(BLANK)
     DB['labels'] = DB['labels'].fillna(BLANK)
     DB['aotd_greeting'] = DB['aotd_greeting'].fillna(BLANK)
+    
    
 
 def load_album_of_the_day_cache():
@@ -706,7 +733,9 @@ def handle_rfid_read(rfid_code):
 def command_card_handler(rfid_code):
     """
     Checks to see if it recieved a command card. 
-    If it did, this function will execute the command
+    If it did, this function will execute the command and return True
+    
+    Otherwise it returns false.
     """
     global DB, APP_RUNNING
     command_code = str(rfid_code)
@@ -715,6 +744,12 @@ def command_card_handler(rfid_code):
         logger.debug('Playing Album of the day.')
         play_album_of_the_day()
         return True 
+    elif (command_code == CONFIG.COMMAND_REPEAT_ALBUM):
+        ## set the current album to repeat.
+        logger.debug('Setting current album to repeat.')
+        aaplayer.play_feedback(CONFIG.FEEDBACK_ALBUM_REPEAT)
+        aaplayer.set_repeat_album(True)
+        return True        
     elif (command_code == CONFIG.COMMAND_STOP_AND_RELOAD_DB ):
         logger.debug('Executing Command Card Stop Player & Reload Database')
         
@@ -770,6 +805,7 @@ def music_card_handler(rfid_code):
     global DB
     
 
+    
     if (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'genre_card')):
         ## this card is meant to play a genre instead of a specific album
         genre = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre')
@@ -816,6 +852,7 @@ def music_card_handler(rfid_code):
                 logger.warning (f'No tracks found for folder {album_folder}.')    
         else:
             ## after all that you didn't find a card.
+            aaplayer.play_feedback(CONFIG.FEEDBACK_RFID_NOT_FOUND)
             logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
             
 
@@ -1168,9 +1205,21 @@ def get_tracks(folders, shuffle_tracks):
             album_songs.sort()
             all_tracks.extend(album_songs)
         else:
-            ## if you were asked to find a folder, then it should exist. 
-            ## If it doesn't exist, say something log the error so it's known. 
-            logger.error(f'Could not find folder: {folder}')
+            ## There is supposed to be a folder for every album 
+            ## but sometimes you'll get a label or genre that gets picked up
+            ## in label card or genre card. We want to ignore those
+            
+            ## so lets look at the child folder name 
+            last_directory = os.path.basename(os.path.normpath(folder))
+           
+            if (last_directory.startswith("label:") or last_directory.startswith("genre:")):
+                ## We should ignore this one
+                logger.info("Skipping folder {folder} because it's a label or genre db row.")
+            else:
+                ## It's not a label or genre card so it should have a folder
+                ## If it doesn't exist, log the error so it's known. 
+                logger.error(f'Could not find folder: {folder}')
+        
         
         
     if(shuffle_tracks == True):
@@ -1607,6 +1656,7 @@ def send_album_of_the_day_email(rfid):
     artist_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Artist'))
     album_url = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'url'))
     subject = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'aotd_greeting'))
+    loaded_hq = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'loaded_hq'))
 
     if (subject == BLANK):
         subject = album_name
@@ -1634,10 +1684,18 @@ def send_album_of_the_day_email(rfid):
     <BR><BR><BR><BR>
     <BR><BR><BR><BR>
     <BR><BR><BR><BR>
-    <div style="font-size: smaller; color: grey;">Use the hammer to play the album.</div>
-    <BR><BR><BR><BR>
     """
     
+    if loaded_hq == "y":
+        body = body + f"""
+        <div style="font-size: smaller; color: grey;">Best recording quality uploaded. Use the hammer to play the album.</div> 
+        <BR><BR><BR><BR>       
+        """
+    else:
+        body = body + f"""
+        <div style="font-size: smaller; color: grey;">Uploaded album quality is <b>meh</b>. Use the hammer to play the album.</div>  
+        <BR><BR><BR><BR>      
+        """
     
     
     # Email settings
@@ -1783,6 +1841,8 @@ def send_email_with_current_track(current_track_for_email):
     
     
     body = f"""{album_and_track_name}<br><br><br>"""
+    
+    
     
     #formatted_datetime = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
     #body = body + f"""<BR><BR><BR><BR>
