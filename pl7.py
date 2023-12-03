@@ -93,6 +93,14 @@ def set_logger(external_logger):
     logger = external_logger
 
 
+def set_repeat_album(repeat):
+    """ Tells the current album to repeat. """
+    global ALBUM_REPEAT
+    
+    ALBUM_REPEAT = repeat
+
+
+
 def is_playing():
     if (MUSIC_PAUSED == 1):
         return False
@@ -117,74 +125,7 @@ def keep_playing():
         # Play the next track
         logger.debug(f'Track Ended. Playing Next Track.')
         next_track()
-    #    return True
-    #else:
-    #    return False
 
-""" removed 2023-08-25. Looks like this was replaced by play_tracks a while back.
-    def play_folder(folder_path, shuffle, repeat):
-    global TRACK_LIST, END_TRACK_INDEX, current_index, current_track, mp3_dir, ALBUM_LOADED, MUSIC_PAUSED, SUPPORTED_EXTENSIONS, ALBUM_REPEAT
-
-    
-
-    if ALBUM_LOADED:
-        shutdown_player()
-
-    #logger.debug('Setting Player Running to true')
-    #PLAYER_RUNNING = True
-    #logger.debug(f'Player Running to {PLAYER_RUNNING}')
-    #ALBUM_SHUFFLE = shuffle
-    
-    # set this global so the keep playing and next functions know if they should repeat at album end.
-    ALBUM_REPEAT = repeat
-    
-    
-    logger.debug("Initiallizing pygame...")
-    # Initialize Pygame
-    startup()
-    #pygame.mixer.pre_init(48000, -16, 2, 2048, DEVICE_NAME)
-    #pygame.init()
-    #pygame.mixer.init(48000, -16, 1, 1024)
-    
-    logger.debug("Completed initializing pygame")
-
-    current_index = 0
-    print("folder path: ", folder_path )
-
-    # Get a list of all the MP3 files in the directory
-    #valid_extensions = ['.mp3', '.wav', '.ogg']
-    TRACK_LIST = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if os.path.splitext(f)[1] in SUPPORTED_EXTENSIONS]
-    
-    
-    # this line ysed to implode because of .DS_local files appearing in directories.
-    #TRACK_LIST = [os.path.join(folder_path, f) for f in os.listdir(folder_path) ]
-
-    # TRACK_LIST = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith('.ogg')]
-    
-    if shuffle == True:
-        random.shuffle(TRACK_LIST)
-    else:
-        # Sort the list of MP3 files alphabetically
-        TRACK_LIST.sort()
-
-    END_TRACK_INDEX = len(TRACK_LIST)
-    
-    print("total tracks ", END_TRACK_INDEX)
-    
-    # Play the first track
-    #current_index += 1
-    current_track = TRACK_LIST[current_index]
-    # Load the current track
-    
-    play_current_track()
-    #logger.info(f'Loading track {current_track}')
-    #pygame.mixer.music.load(current_track)
-    #pygame.mixer.music.play()
-    MUSIC_PAUSED = 0
-    ALBUM_LOADED = True
-    #ALBUM_IN_PROGRESS = True
-    print ("End track index", END_TRACK_INDEX)
-"""
     
     
 def play_tracks(tracks, repeat):
@@ -402,7 +343,7 @@ def jump_to_track(track_index):
 
 
 def next_track():
-    global current_index, TRACK_LIST, MUSIC_PAUSED, ALBUM_REPEAT
+    global current_index, TRACK_LIST, MUSIC_PAUSED 
   
     MUSIC_PAUSED = 0
     # Stop the mixer
@@ -424,9 +365,7 @@ def next_track():
         # Load and play the next track
         play_current_track()
 
-"""
-        
-"""
+
 def prev_track():
     """
     If the current track has been playing for more than 10 seconds this brings the user back 
