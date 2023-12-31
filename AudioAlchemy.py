@@ -6,7 +6,7 @@ import pl7 as aaplayer
 import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library  
 from gpiozero import Button
 from mfrc522 import SimpleMFRC522
-import threading
+#import threading
 import logging
 from logging.handlers import RotatingFileHandler
 import sys
@@ -28,34 +28,6 @@ import re
 import traceback
 
 
-"""
-#################################################################################
-
-            Logger 
-
-#################################################################################"""
-
-# Create the logger
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-
-# Create a formatter
-formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
-# Create a stream handler to log to STDOUT
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setLevel(logging.DEBUG)
-stream_handler.setFormatter(formatter)
-logger.addHandler(stream_handler)
-
-
-
-# Create a rotating file handler to log to a file
-formatterForLogFile = logging.Formatter('%(asctime)s %(message)s -- %(funcName)s %(lineno)d')
-file_handler = RotatingFileHandler(CONFIG.LOG_FILE_LOCATION, maxBytes=1024*1024, backupCount=5)
-#file_handler = RotatingFileHandler("./logs/error.log", maxBytes=1024*1024, backupCount=5)
-file_handler.setLevel(logging.ERROR)
-file_handler.setFormatter(formatterForLogFile)
-logger.addHandler(file_handler)
 
 """
 #################################################################################
@@ -92,9 +64,11 @@ FILE_AOTD_CACHE = CONFIG.DB_CACHE_LOCATION + "aotdcache.csv"
 """
 ## Used to calculate the number of days before an album can be chosed for
 ## album of the day after being selected. the equation is
-## #of albums available for random selection * AOTD_REPEAT_LIMIT
+## #of albums available for random selection * AOTD_REPEAT_LIMIT set to .7
 ## I did a bumch of testing and this creates a comfortable random feeling withot
 ## to frequent repeats. Here are some results from bulk testing I did.
+
+## 2023-12-31 I updated the limit to .9 because it helped with Christmas and the bigger library.
 
     5000 Test Loops 
     13.698630136986301 Years of albums of the day 
@@ -118,7 +92,7 @@ FILE_AOTD_CACHE = CONFIG.DB_CACHE_LOCATION + "aotdcache.csv"
     192 played 1 times
     25 played 0 times
 """
-AOTD_REPEAT_LIMIT = .7
+AOTD_REPEAT_LIMIT = .9
 
 
 #### THESE ARE NEW
@@ -201,6 +175,42 @@ make things the same or worse.
 """
 IS_SYSTEM_DATE_SET = False
 
+"""
+This is the global logger. It gets set when the application starts. 
+"""
+logger = None
+
+"""
+#################################################################################
+
+            Logger 
+
+#################################################################################"""
+def start_logger(file_location=CONFIG.LOG_FILE_LOCATION, log_out_level=logging.DEBUG):
+    global logger
+    # Create the logger
+    logger = logging.getLogger()
+    logger.setLevel(log_out_level)
+
+    # Create a formatter
+    formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
+    # Create a stream handler to log to STDOUT
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setLevel(log_out_level)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
+
+
+
+    # Create a rotating file handler to log to a file
+    formatterForLogFile = logging.Formatter('%(asctime)s %(message)s -- %(funcName)s %(lineno)d')
+    file_handler = RotatingFileHandler(file_location, maxBytes=1024*1024, backupCount=5)
+    #file_handler = RotatingFileHandler("./logs/error.log", maxBytes=1024*1024, backupCount=5)
+    file_handler.setLevel(logging.ERROR)
+    file_handler.setFormatter(formatterForLogFile)
+    logger.addHandler(file_handler)
+    
+    return logger;
 
 
 """
@@ -223,29 +233,12 @@ def load_database(LOAD_FROM_WEB):
             
             
             DB = read_db(DB_CACHE)
-            ## 2023-11-11 replaced with the above helper function so that 
-            ## I don't have the same code in 2 places. Also, I don't know why I previously had 2 read lines below.
-            ## looks like a previous oversignt.
-            ##            
-            #DB = pd.read_csv(DB_CACHE)
-            #DB = pd.read_csv(DB_CACHE, dtype={'genre_card': float, 'label_card': float, \
-            #                                  'shuffle_albums': float, 'shuffle_songs': float, \
-            #                                  'repeat': float, 'christmas_aotd': float, \
-            #                                  'exclude_from_random': float, 'aotd_date': str, 'rfid': str, 'loaded': float} )
-            
-   
+              
             
             logging.debug("SUCCESS! DB loaded from cache.")
             DB_LOADED = True
             
             clean_up_catalog_db_column_types()
-            
-            """replaced by the previous line
-            DB['sub_genre'] = DB['sub_genre'].fillna(BLANK)
-            DB['genre'] = DB['genre'].fillna(BLANK)
-            DB['folder'] = DB['folder'].fillna(BLANK)
-            DB['labels'] = DB['labels'].fillna(BLANK)
-            """
             
             return DB
         else:
@@ -256,7 +249,7 @@ def load_database(LOAD_FROM_WEB):
         try:
             
             ## update the system data so that your call to google works.
-            set_ststem_date()
+            #set_ststem_date()
             
             logging.debug("Attempting to load the DB from the internet.")
             db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
@@ -275,13 +268,6 @@ def load_database(LOAD_FROM_WEB):
             
             DB = read_db(db_url)
             
-            ## 2023-11-11 replaced with the above helper function so that 
-            ## I don't have the same code in 2 places
-            #DB = pd.read_csv(db_url, dtype={'genre_card': float, 'label_card': float, \
-            #                                  'shuffle_albums': float, 'shuffle_songs': float, \
-            #                                  'repeat': float, 'christmas_aotd': float, \
-            #                                  'exclude_from_random': float, 'aotd_date': str, 'rfid': str, \
-            #                                  'aotd_greeting': str, 'loaded': float} )
             
             logging.debug("SUCCESS! The DB loaded from the web.")
             
@@ -440,7 +426,7 @@ def set_ststem_date():
             logger.error(f"An exception occurred while trying to set the system date: {e}")
             stack_trace = traceback.format_exc()
             logger.error(f"{stack_trace}")
-            sleep(3)
+            time.sleep(3)
 
     
 def backup_cache(cache_file):
@@ -469,16 +455,19 @@ def is_rfid_codes_match(rfid1,rfid2):
 
 def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE, DB_AOTD_CACHE
+
+
+    ## the read only OS thinks the date is June 2023 on reboot. In order for 
+    ## album of the day to work properly, you need to fitch the current date
+    ## and set the system time.
+    set_ststem_date()
     
     #try:
     # Load the database of RFID tags and their matching albums
     DB = load_database(FLAG_LOAD_DB_FROM_THE_WEB)
     
     
-    ## the read only OS thinks the date is June 2023 on reboot. In order for 
-    ## album of the day to work properly, you need to fitch the current date
-    ## and set the system time.
-    set_ststem_date()
+
 
 
 
@@ -1378,9 +1367,6 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
     logger.debug(f'Getting Alum of the day')
     
     
-    #seed_for_random_lookup = str(seed_for_random_lookup)
-    
-    
     ## Let's see if there already was an album of the day
     found_rfid = check_aotd_cache_for_today(seed_for_random_lookup)  # This will store the found rfid value
     
@@ -1396,18 +1382,8 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
         return found_rfid
     
     
-    ## Load the x previous albums of the day
-    try:
-        aotd_block_list = DB_AOTD_CACHE.tail(int(len(DB)*AOTD_REPEAT_LIMIT))
-    except (FileNotFoundError, pd.errors.EmptyDataError):
-        # If the albumoftheday.csv file is not found or empty, then all albums in catalog are available
-        aotd_block_list = pd.DataFrame(columns=DB_AOTD_CACHE.columns)  # Empty DataFrame with same columns
-        logger.debug(f'Found no blocked albums. Created blank list')
-    
-    #print("\n\n\nBLOCK LIST")
-    #print(aotd_block_list)
-    
-    available_albums = pd.DataFrame()
+    ## we're going to grab all the albums that can be used as the album of the day. Then we'll see what happens. 
+    potential_albums = pd.DataFrame()
     
     if is_between_thanksgiving_and_christmas_inclusive():
         """     *                                                          *
@@ -1425,61 +1401,54 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
         ## starting on thanksgiving we play Christmas Albums as the album of the day until and including Christmas day 
         ## anything with a 1 in the christmas_random column is fair game"""
         
-        """condition1 = ~DB['rfid'].isin(aotd_block_list['rfid'])
-        condition2 = DB['christmas_aotd'] == 1
-        print("DB Condition 1 - not in the block list")
-        print(DB[condition1])
-
-
-        print("\n\n\nDB Condition 2 - christmas_aotd == 1")
-
-        print(DB[condition2])"""
+        """
+        2023-12-30 swapping this line out. It's possible to have the list not return any results because we're counting 
+        the size of the DB before checking how many albums are available. It's possible that we could have a DB so big
+        but not all the albums are available for selection, so we end up at a future date with no available albums
         
         available_albums = DB[(~DB['rfid'].isin(aotd_block_list['rfid'])) & (DB['christmas_aotd'] == 1)]
+        
+        """
+        potential_albums = DB[DB['christmas_aotd'] == 1]
         logger.debug(f'Getting Christmas albums.')
         
     else:
-        """
-        condition0 = DB['rfid'].isin(aotd_block_list['rfid'])
-        
-        condition1 = ~DB['rfid'].isin(aotd_block_list['rfid'])
-        condition2 = DB['exclude_from_random'] != 1
-        
-        condition3 = DB['exclude_from_random'] == 1
-        
-        # Set pandas display options
-        pd.set_option('display.max_rows', None)
-        pd.set_option('display.max_columns', None)
-        pd.set_option('display.width', None)
-        pd.set_option('display.max_colwidth', None)
 
-        # Print the entire DataFrame
-       
-        print("\n\n\nDB Condition 0 - in the block list")
-        print(DB[condition0])
-        print("\n\n\n Catalog RFID Type")
-        print(DB['rfid'].dtype)
-        print("\n\n\nBlocklist RFID Type")
-        print(aotd_block_list['rfid'].dtype)
-        print("\n\n\n")
-         
-        print("\n\n\nDB Condition 1 - not in the block list")
-        print(DB[condition1])
-
-
-        print("\n\n\nDB Condition 2 - exclude_from_random != 1")
-
-        print(DB[condition2])
-        
-        print("\n\n\nDB Condition 3 - exclude_from_random == 1")
-
-        print(DB[condition3])
-        """ 
         ## It's not the Christmas season, so play everything but christmas music
         ## Filter the catalog DataFrame to only include rows where the album hasn't been played 
         ## reciently 
+        """
+        2023-12-30 swapping this line out. It's possible to have the list not return any results because we're counting 
+        the size of the DB before checking how many albums are available. It's possible that we could have a DB so big
+        but not all the albums are available for selection, so we end up at a future date with no available albums
+        
         available_albums = DB[(~DB['rfid'].isin(aotd_block_list['rfid'])) & (DB['exclude_from_random'] != 1)]
-            
+        
+        """
+        
+        # Get all the albums that aren't excluded dfrom the album of the day list
+        potential_albums = DB[DB['exclude_from_random'] != 1]
+        logger.info("Got the list of potential albums.")
+        
+      
+    # figure out how many possible albums there are. You need this to make sure you don't 
+    # remove too many albums using the AOTD cache.    
+    potential_size = len(potential_albums)
+    logger.info(f'Potential Album Count: {potential_size}')
+        
+    ## get the album of the day cache limited to the AOTD_REPEAT_LIMIT * the lenght of the available tracks.
+    try:
+        aotd_block_list = DB_AOTD_CACHE.tail(int(len(potential_albums)*AOTD_REPEAT_LIMIT))
+    except (FileNotFoundError, pd.errors.EmptyDataError):
+        # If the albumoftheday.csv file is not found or empty, then all albums in catalog are available
+        aotd_block_list = pd.DataFrame(columns=DB_AOTD_CACHE.columns)  # Empty DataFrame with same columns
+        logger.debug(f'Found no blocked albums. Created blank list')
+    
+    ## Remove any albums that have been the album of the day in the number of days== total potential albums times the
+    ## AOTD_REPEAT_LIMIT. That makes it so that at max, 80% of the potential albums can be excluded. This way you don't
+    ## get into a situation where you remove all the albums.
+    available_albums = potential_albums[~potential_albums['rfid'].isin(aotd_block_list['rfid'])]
+    
     
     sample_size = len(available_albums)
     logger.debug(f'{sample_size} available albums.')
@@ -1897,7 +1866,10 @@ def validate_seed(value):
     return value
 
 def main(email_flag_set, date_seed, email_today_set, webdb_set):
-    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_TODAY, FLAG_LOAD_DB_FROM_THE_WEB
+    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_TODAY, FLAG_LOAD_DB_FROM_THE_WEB, logger
+    
+    
+    logger = start_logger()
     
     if email_flag_set:
         print("The AOTD will be sent.")
