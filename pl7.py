@@ -6,6 +6,7 @@ import random
 import os
 import time
 import configfile as CONFIG
+import aareporter
 #os.environ['SDL_AUDIODRIVER'] = 'dsp'
 
 
@@ -47,6 +48,8 @@ SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
 DEVICE_NAME = 'Audio Adapter (Unitek Y-247A) Mono'
 
+PREVIOUS_FOLDER = None
+
 
 ## keeps track of weather or not the tracks have all been played.
 ## This is True after the tracks have played, until someone starts playing them again.
@@ -57,9 +60,11 @@ logger = None
 # Initialize the current index and current track variables
 current_index = 0
 
+MUSIC_STOPPED = 0
+
 
 def startup():
-    global ALBUM_REPEAT, ALBUM_LOADED, MUSIC_PAUSED, END_TRACK_INDEX
+    global ALBUM_REPEAT, ALBUM_LOADED, MUSIC_PAUSED, END_TRACK_INDEX,MUSIC_STOPPED
     
     
     #reset the state back to the beginning state so we don't get weirdness
@@ -70,6 +75,7 @@ def startup():
     ALBUM_REPEAT = False
     
     MIXER_LOADED = False
+    MUSIC_STOPPED = 0
     
     
     ## It's possible for the audio drivers not to be loaded at the point this is called
@@ -278,8 +284,17 @@ def get_index_of_first_track(album_directory):
 
 
 def play_pause_track():
-    global MUSIC_PAUSED
-    if (MUSIC_PAUSED == 1):
+    global MUSIC_PAUSED, MUSIC_STOPPED
+    
+    if (MUSIC_STOPPED == 1):
+        ## the music was stopped. This is likely
+        ## because you reached the end of the album
+        ## It's looped back around to the beginning 
+        ## but the player is stopped instead of paused. Since pygame.mixer.music.unpause()
+        ## doesn't work on stopped music, we need to call play.
+        play_current_track()
+        MUSIC_STOPPED = 0
+    elif (MUSIC_PAUSED == 1):
         unpause_track()
     else:
         pause_track()
@@ -298,7 +313,7 @@ def pause_track():
     logger.info('Pausing album.')
 
 def play_current_track():
-    global TRACK_LIST, current_index, MUSIC_PAUSED
+    global TRACK_LIST, current_index, MUSIC_PAUSED, PREVIOUS_FOLDER
     
     current_track = None
     try:
@@ -307,6 +322,12 @@ def play_current_track():
         logger.info(f'Starting: {current_track}')
         pygame.mixer.music.load(current_track)
         pygame.mixer.music.play()
+        
+        if (current_index == 0):
+            #we've started or restarted an album. So reset the album name so we count it again
+            PREVIOUS_FOLDER = None
+            
+        report_track(current_track)
     except Exception as e:
         if (current_track == None):
             logger.error(f'Unable to play track at index "{current_index}" {e} ')
@@ -348,22 +369,28 @@ def next_track():
     MUSIC_PAUSED = 0
     # Stop the mixer
     pygame.mixer.music.stop()
+    MUSIC_STOPPED = 1
     
     # Get the next index
     current_index += 1
     if (ALBUM_REPEAT == False and current_index >= len(TRACK_LIST)):
         current_index = 0
-        play_current_track()
-        pause_track()
+        # 2024-02-05 removed these two lines. Since I added logging 
+        # to the play_current_track function it's become obvious that 
+        # I'm playing these tracks for no reason
+        # play_current_track()
+        # pause_track()
         logger.info(f'Reached end of album. Press play to restart album.')
     elif (ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
         ## The album reached it's end and should now restart
         current_index = 0
         play_current_track()
+        MUSIC_STOPPED = 0
         logger.info(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
     else:
         # Load and play the next track
         play_current_track()
+        MUSIC_STOPPED = 0
 
 
 def prev_track():
@@ -413,6 +440,34 @@ def play_feedback(feedback_file):
         feedback_audio.play()
     except Exception as e:
         logger.error(f'Unable to play feedback sound "{feedback_file}" {e} ')
+        
+        
+def report_track(current_track):
+    global PREVIOUS_FOLDER
+    folder, file_name = get_folder_and_file(current_track)
+    logger.debug(f'folder: {folder}')
+    logger.debug(f'file: {file_name}')
+    aareporter.log_track_play(folder, file_name)
+    
+    logger.debug(f'preparing to log album')
+    if (PREVIOUS_FOLDER != folder):
+        # we're playing a new album
+        logger.debug(f'logging album')
+        aareporter.log_album_play(folder)
+
+    PREVIOUS_FOLDER = folder
+    
+    
+def get_folder_and_file(path):
+    # Get the full path of the directory
+    folder_path = os.path.dirname(path)
+    # Extract the folder name from the full path
+    folder_name = os.path.basename(folder_path)
+    # Extract the file name from the full path
+    file_name = os.path.basename(path)
+    return folder_name, file_name
+    
+
         
 def shutdown_player():
     #global PLAYER_RUNNING

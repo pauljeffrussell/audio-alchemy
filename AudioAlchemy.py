@@ -26,6 +26,7 @@ from email.mime.text import MIMEText
 import argparse
 import re
 import traceback
+import aareporter
 
 
 
@@ -186,8 +187,18 @@ logger = None
             Logger 
 
 #################################################################################"""
-def start_logger(file_location=CONFIG.LOG_FILE_LOCATION, log_out_level=logging.DEBUG):
+def start_logger(debug_set):
     global logger
+    
+    file_location=CONFIG.LOG_FILE_LOCATION 
+    log_out_level=logging.WARNING
+    
+    if debug_set == True:
+        log_out_level=logging.DEBUG
+        print ("Setting logging level to DEBUG.")
+    else:
+        print ("Setting logging level to WARNING.")    
+    
     # Create the logger
     logger = logging.getLogger()
     logger.setLevel(log_out_level)
@@ -249,7 +260,9 @@ def load_database(LOAD_FROM_WEB):
         try:
             
             ## update the system data so that your call to google works.
-            #set_ststem_date()
+            if (IS_SYSTEM_DATE_SET == False):
+                set_ststem_date()
+                
             
             logging.debug("Attempting to load the DB from the internet.")
             db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
@@ -376,6 +389,9 @@ def update_aotd_cache(date, rfid, album_name):
         DB_AOTD_CACHE.to_csv(FILE_AOTD_CACHE, mode='w', header=True, index=False)
     except:
         logger.ERROR('Unable to save the Album of the Day CACHE to disk')
+        
+        
+
 
 def set_ststem_date():
     """ 
@@ -495,6 +511,7 @@ def alchemy_app_runtime():
 
     #set the logger for the music player
     aaplayer.set_logger(logger)
+    aareporter.set_logger(logger)
 
     #set up the music player
     aaplayer.startup()
@@ -534,7 +551,6 @@ def alchemy_app_runtime():
 
     LAST_COMMAND_CARD = 0
  
-  
     logger.debug('Starting RFID Reader')
     print("Place a new tag on the reader.")
     
@@ -544,7 +560,7 @@ def alchemy_app_runtime():
             ## read the RFID from the reader
             rfid_code = reader.read_id_no_block()
         
-
+            ##logger.info(f'RFID Read: {rfid_code}')
             ## TAGS will only be read once     
             if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
                 is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
@@ -732,12 +748,19 @@ def command_card_handler(rfid_code):
     if (command_code == CONFIG.COMMAND_PLAY_ALBUM_OF_THE_DAY):
         logger.debug('Playing Album of the day.')
         play_album_of_the_day()
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Album of the day", "COMMAND_PLAY_ALBUM_OF_THE_DAY", rfid_code)        
         return True 
+    elif (command_code == CONFIG.COMMAND_STOP_PLAYER):
+        logger.debug('Stopping player.')
+        aaplayer.pause_track()
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Pause Track", "COMMAND_STOP_PLAYER", rfid_code)
+        return True
     elif (command_code == CONFIG.COMMAND_REPEAT_ALBUM):
         ## set the current album to repeat.
         logger.debug('Setting current album to repeat.')
         aaplayer.play_feedback(CONFIG.FEEDBACK_ALBUM_REPEAT)
         aaplayer.set_repeat_album(True)
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Repeat Album", "COMMAND_REPEAT_ALBUM", rfid_code)
         return True        
     elif (command_code == CONFIG.COMMAND_STOP_AND_RELOAD_DB ):
         logger.debug('Executing Command Card Stop Player & Reload Database')
@@ -757,20 +780,24 @@ def command_card_handler(rfid_code):
         ## reset the player. I'm not sure why this is here. It probably served a purpose a long time ago
         aaplayer.shutdown_player()
         aaplayer.startup()
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Reload Database", "COMMAND_STOP_AND_RELOAD_DB", rfid_code)    
         CURRENT_ALBUM_SHUFFLED = False
         return True
     elif (command_code == CONFIG.COMMAND_SHUT_DOWN_APP ):
         logger.debug('Read RFID to shutdown application')
         APP_RUNNING = False
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Shut Down App", "COMMAND_SHUT_DOWN_APP", rfid_code)
         return True
     elif (command_code == CONFIG.COMMAND_PLAY_RANDOM_ALBUMS ):
         logger.debug('Read RFID to play random albums')
         play_random_albums()
         CURRENT_ALBUM_SHUFFLED = False
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play Random Albums", "COMMAND_PLAY_RANDOM_ALBUMS", rfid_code)
         return True 
     elif (command_code == CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK):
         logger.debug('Read RFID to play in order from a random track')
         aaplayer.play_in_order_from_random_track()
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play in order from random track", "COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK", rfid_code)
         return True 
     elif (command_code == CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME):
         ## We're going to email the current track to the 
@@ -782,6 +809,8 @@ def command_card_handler(rfid_code):
             
             #send an email with that track
             send_email_with_current_track(current_track_for_email)
+            
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Email Album Name", "COMMAND_EMAIL_CURRENT_TRACK_NAME_FEEDBACK", rfid_code)
         return True
     else:
         return False
@@ -805,10 +834,14 @@ def music_card_handler(rfid_code):
         
         tracks = get_tracks(genre_album_folder_list, is_song_shuffle(rfid_code))
         
+        
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
             aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )   
             CURRENT_ALBUM_SHUFFLED = False
+        
+        name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_GENRE, name, genre + "::" + sub_genre, rfid_code)
     
     elif (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')):
         #this card is a label card. It is intended to play all of the albums with a matching lable.
@@ -816,10 +849,15 @@ def music_card_handler(rfid_code):
         label_album_folder_list = get_albums_for_label(label, is_album_shuffle(rfid_code))
         tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
         
+
+        
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
             aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
             CURRENT_ALBUM_SHUFFLED = False
+        
+        name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_LABEL, name, label, rfid_code)
     
     else:
         ## it must be an album card or no card at all
@@ -833,22 +871,32 @@ def music_card_handler(rfid_code):
         
             tracks = get_tracks([album_folder], is_song_shuffle(rfid_code))
 
+
             if (len(tracks) > 0):
                 logger.debug (f'Album has tracks. Playing...')
                 aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
                 CURRENT_ALBUM_SHUFFLED = False
+            
             else:
                 logger.warning (f'No tracks found for folder {album_folder}.')    
+        
+            name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+            aareporter.log_card_tap(CONFIG.CARD_TYPE_ALBUM, name, album_folder_name, rfid_code)
+        
+        
         else:
             ## after all that you didn't find a card.
             aaplayer.play_feedback(CONFIG.FEEDBACK_RFID_NOT_FOUND)
             logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
+            name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+            areporter.log_card_tap(CONFIG.CARD_TYPE_CARD_UNKNOWN, "Unknown", "Unknown", rfid_code)
+            
             
 
 def start_button_controls():
  
     button16 = Button("BOARD16")
-    button15 = Button("BOARD15")
+    button15 = Button("BOARD7")
     button13 = Button("BOARD13")
 
 
@@ -1337,6 +1385,10 @@ def set_album_of_the_day_date_and_rfid():
             ## We appear to have't saveded the album of the day in the cache. 
             ## I guess this is our first time doing this. 
             update_aotd_cache(todays_seed, rfid, folder)
+            try:
+                aareporter.log_aotd(folder, rfid)
+            except Exception as e:
+                    logger.error(f'Error while writing AOTD to the google sheet., an unexpected error occurred: {e}')
             
         return True
  
@@ -1865,11 +1917,11 @@ def validate_seed(value):
         raise argparse.ArgumentTypeError("seed must be in 8-digit format")
     return value
 
-def main(email_flag_set, date_seed, email_today_set, webdb_set):
+def main(email_flag_set, date_seed, email_today_set, webdb_set, debug_set):
     global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_TODAY, FLAG_LOAD_DB_FROM_THE_WEB, logger
     
     
-    logger = start_logger()
+    logger = start_logger(debug_set)
     
     if email_flag_set:
         print("The AOTD will be sent.")
@@ -1924,8 +1976,9 @@ if __name__ == "__main__":
     # Add the seed parameter with validation but make it optional
     parser.add_argument('--webdb', action='store_true', help='Tells the application to load the DB from the web.')
     
+    parser.add_argument('--debug', action='store_true', help='Tells the application to run in debug mode.')
 
     args = parser.parse_args()
 
-    main(args.aotd_enabled, args.seed, args.email_today, args.webdb)
+    main(args.aotd_enabled, args.seed, args.email_today, args.webdb, args.debug)
 
