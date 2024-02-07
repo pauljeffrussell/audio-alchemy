@@ -11,5 +11,9 @@ logs/*
 ffmpeg
 .DS_store
 configfile.py
+configfiletest.py
 __pycache__/*
-
+helper/*
+keys/*
+library_unused_tracks/*
+os/*
