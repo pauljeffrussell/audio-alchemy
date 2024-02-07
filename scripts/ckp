@@ -29,8 +29,14 @@ TIMESTAMP_SECONDS=$(date --date="$LAST_TIMESTAMP" +%s)
 CURRENT_SECONDS=$(date +%s)
 
 # Calculate the difference in days, rounding up
-DAYS_DIFFERENCE=$(((CURRENT_SECONDS - TIMESTAMP_SECONDS + 24*60*60 - 1) / (24*60*60)))
 
+
+DAYS_DIFFERENCE=$(((CURRENT_SECONDS - TIMESTAMP_SECONDS) / (24*60*60)))
+SECS_DIFFERENCE=$((CURRENT_SECONDS - TIMESTAMP_SECONDS))
+echo -e "DAYS ${DAYS_DIFFERENCE}"
+echo -e "SECS ${SECS_DIFFERENCE}"
+echo -e "CURRENT    ${CURRENT_SECONDS}"
+echo -e "TIMESTAMP  ${TIMESTAMP_SECONDS}"
 
 : <<'END_COMMENT'
 uptime_output=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
@@ -150,12 +156,12 @@ fi
 
 if [ "$1" == "-f" ]; then
     echo
-    echo "Pid: $PID"
+    echo -e "Pid: ${GREEN}$PID${NC}"
 fi
 
 echo 
 if (( DAYS_DIFFERENCE < 1 )); then
-    echo -e "Last error: \e[1;31m$DAYS_DIFFERENCE days ago\e[0m  \e[90m$LAST_TIMESTAMP\e[0m"
+    echo -e "Last error: \e[1;31mToday at $LAST_TIMESTAMP\e[0m"
 else
     echo -e "Last error: \e[1;32m$DAYS_DIFFERENCE days ago\e[0m  \e[90m$LAST_TIMESTAMP\e[0m"
 fi

@@ -1,2 +1,2 @@
-sudo /usr/bin/python3 -B /media/audioalchemy/AudioAlchemy.py
+sudo /usr/bin/python3 -B /media/audioalchemy/AudioAlchemy.py --debug
 
