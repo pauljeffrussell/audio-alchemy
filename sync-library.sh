@@ -2,7 +2,7 @@
 
 ALCHEMY_IP=$(./alchemy-ip.sh)
 
-echo $ALCHEMY_IP
+echo "Connecting to $ALCHEMY_IP"
 
 
 # Rsync command to sync files
