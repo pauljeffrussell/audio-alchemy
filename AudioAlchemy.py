@@ -889,7 +889,7 @@ def music_card_handler(rfid_code):
             aaplayer.play_feedback(CONFIG.FEEDBACK_RFID_NOT_FOUND)
             logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
             name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
-            areporter.log_card_tap(CONFIG.CARD_TYPE_CARD_UNKNOWN, "Unknown", "Unknown", rfid_code)
+            aareporter.log_card_tap(CONFIG.CARD_TYPE_CARD_UNKNOWN, "Unknown", "Unknown", rfid_code)
             
             
 
