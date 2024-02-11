@@ -45,6 +45,9 @@ ALBUM_LOADED = False # used to determine if I should cleanup pygame before start
 
 ALBUM_REPEAT = False
 
+SONG_SHUFFLE = False
+SONG_SHUFFLE_ORIGINAL_SETTING = False
+
 SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
 DEVICE_NAME = 'Audio Adapter (Unitek Y-247A) Mono'
@@ -65,7 +68,7 @@ MUSIC_STOPPED = 0
 
 
 def startup():
-    global ALBUM_REPEAT, ALBUM_LOADED, MUSIC_PAUSED, END_TRACK_INDEX,MUSIC_STOPPED
+    global ALBUM_REPEAT, ALBUM_LOADED, MUSIC_PAUSED, END_TRACK_INDEX, MUSIC_STOPPED, SONG_SHUFFLE
     
     
     #reset the state back to the beginning state so we don't get weirdness
@@ -74,6 +77,8 @@ def startup():
     ALBUM_LOADED = False 
     #PLAYER_RUNNING = False
     ALBUM_REPEAT = False
+    SONG_SHUFFLE = False
+    SONG_SHUFFLE_ORIGINAL_SETTING = False
     
     MIXER_LOADED = False
     MUSIC_STOPPED = 0
@@ -135,8 +140,8 @@ def keep_playing():
 
     
     
-def play_tracks(tracks, repeat):
-    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT, TRACK_LIST_ORIGINAL_ORDER
+def play_tracks(tracks, repeat, song_shuffle):
+    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT, TRACK_LIST_ORIGINAL_ORDER, SONG_SHUFFLE 
 
 
     if ALBUM_LOADED:
@@ -159,6 +164,13 @@ def play_tracks(tracks, repeat):
     
     # set this global so the keep playing and next functions know if they should repeat at album end.
     ALBUM_REPEAT = repeat
+    
+    # set this global so we know if the album songs are shuffled. If they are only record the 0 index and not every
+    ## change in folder. see play_cuurrent_track
+    SONG_SHUFFLE = song_shuffle
+    SONG_SHUFFLE_ORIGINAL_SETTING = song_shuffle
+    
+    
     
     ## this should really be done by passing the CONFIG variables into the play tracks
     ## method, but 
@@ -236,9 +248,11 @@ def jump_to_previous_album():
 
 
 def shuffle_current_songs():
-    global TRACK_LIST, current_index
+    global TRACK_LIST, current_index, SONG_SHUFFLE
     
     pygame.mixer.music.stop()
+    
+    SONG_SHUFFLE = True
     
     random.shuffle(TRACK_LIST)
     
@@ -246,7 +260,7 @@ def shuffle_current_songs():
     play_current_track()
 
 def unshuffle_current_songs():
-    global TRACK_LIST, current_index, TRACK_LIST_ORIGINAL_ORDER
+    global TRACK_LIST, current_index, TRACK_LIST_ORIGINAL_ORDER, SONG_SHUFFLE, SONG_SHUFFLE_ORIGINAL_SETTING
     
     pygame.mixer.music.stop()
     
@@ -254,6 +268,10 @@ def unshuffle_current_songs():
     ## for example the play 5 random albums are in order per album, but the albums aren't in a specific order
     ## moreover, of you sort that list, you're going to get albums overlapping each other.
     TRACK_LIST = TRACK_LIST_ORIGINAL_ORDER.copy()
+    
+    ## we don't put SONG_SHUFFLE back at this point because we 
+    SONG_SHUFFLE = SONG_SHUFFLE_ORIGINAL_SETTING
+    
     
     current_index = 0
     play_current_track()
@@ -454,15 +472,16 @@ def play_feedback(feedback_file):
         
         
 def report_track(current_track):
-    global PREVIOUS_FOLDER
+    global PREVIOUS_FOLDER, SONG_SHUFFLE
     folder, file_name = get_folder_and_file(current_track)
     logger.debug(f'folder: {folder}')
     logger.debug(f'file: {file_name}')
     aareporter.log_track_play(folder, file_name)
     
     logger.debug(f'preparing to log album')
-    if (PREVIOUS_FOLDER != folder):
-        # we're playing a new album
+    if (PREVIOUS_FOLDER != folder and SONG_SHUFFLE == False ):
+        # we're playing a new album. We ignore song shuffled albums because
+        # they will create lots of album plays as they jump thorugh albums
         logger.debug(f'logging album')
         aareporter.log_album_play(folder)
 
