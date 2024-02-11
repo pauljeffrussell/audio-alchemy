@@ -232,7 +232,7 @@ def start_logger(debug_set):
 #################################################################################"""
 
 def load_database(LOAD_FROM_WEB):
-    global DB
+    global DB, IS_SYSTEM_DATE_SET
     
     DB_LOADED = False
     
@@ -837,7 +837,7 @@ def music_card_handler(rfid_code):
         
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )   
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code) )   
             CURRENT_ALBUM_SHUFFLED = False
         
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
@@ -853,7 +853,7 @@ def music_card_handler(rfid_code):
         
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code) )
             CURRENT_ALBUM_SHUFFLED = False
         
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
@@ -874,7 +874,7 @@ def music_card_handler(rfid_code):
 
             if (len(tracks) > 0):
                 logger.debug (f'Album has tracks. Playing...')
-                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code) )
+                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code) )
                 CURRENT_ALBUM_SHUFFLED = False
             
             else:
@@ -1329,8 +1329,14 @@ def set_album_of_the_day_date_and_rfid():
     Note: This was the old def get_album_of_the_day_rfid(): 
 
     """
-    global DB, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID, FLAG_AOTD_ENABLED
+    global DB, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_RFID, FLAG_AOTD_ENABLED, IS_SYSTEM_DATE_SET
     rfid = BLANK
+    
+    
+    ## update the system data so that you use the right date dfor the AOTD.
+    if (IS_SYSTEM_DATE_SET == False):
+        set_ststem_date() 
+    
     
     #use today's date YYYYMMDD as the seed for pulling random albums
     # the goal is to get the same answer all day
@@ -1803,7 +1809,7 @@ def play_random_albums():
     tracks = get_tracks(album_folder_list, False)
     if (len(tracks) > 0):
         logger.debug (f'Album has tracks. Playing...')
-        aaplayer.play_tracks(tracks, False)
+        aaplayer.play_tracks(tracks, False, False)
     else:
         logger.warning (f'No tracks found for folder {album_folder}.')
 
