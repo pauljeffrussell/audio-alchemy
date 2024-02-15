@@ -356,10 +356,11 @@ def play_current_track():
             logger.error(f"No track to play. An exception occurred: {e}\nStack trace:\n{stack_trace}")
             #logger.error(f'Unable to play track at index "{current_index}" {e} ')
         else:
+            logger.error(f'Unable to play track "{current_track}" {e} ')
             stack_trace = traceback.format_exc()
             #print(f"An exception occurred: {e}\nStack trace:\n{stack_trace}")
             logger.error(f"Unable to play track. An exception occurred: {e}\nStack trace:\n{stack_trace}")
-            ##logger.error(f'Unable to play track "{current_track}" {e} ')
+            #logger.error(f'Unable to play track "{current_track}" {e} ')
         
     
 

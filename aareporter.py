@@ -3,6 +3,7 @@ import datetime
 import configfile as CONFIG
 import gspread
 import logging
+import requests
 import sys
 from oauth2client.service_account import ServiceAccountCredentials
 
