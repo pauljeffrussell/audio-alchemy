@@ -33,10 +33,20 @@ CURRENT_SECONDS=$(date +%s)
 
 DAYS_DIFFERENCE=$(((CURRENT_SECONDS - TIMESTAMP_SECONDS) / (24*60*60)))
 SECS_DIFFERENCE=$((CURRENT_SECONDS - TIMESTAMP_SECONDS))
-echo -e "DAYS ${DAYS_DIFFERENCE}"
-echo -e "SECS ${SECS_DIFFERENCE}"
-echo -e "CURRENT    ${CURRENT_SECONDS}"
-echo -e "TIMESTAMP  ${TIMESTAMP_SECONDS}"
+#echo -e "DAYS ${DAYS_DIFFERENCE}"
+#echo -e "SECS ${SECS_DIFFERENCE}"
+#echo -e "CURRENT    ${CURRENT_SECONDS}"
+#echo -e "TIMESTAMP  ${TIMESTAMP_SECONDS}"
+
+
+# Calculate the difference in seconds
+DIFF_SECONDS=$((TIMESTAMP2 - TIMESTAMP1))
+
+# Convert seconds to days with one decimal point. Use 'bc' for floating-point arithmetic.
+DIFF_DAYS=$(echo "scale=1; $SECS_DIFFERENCE / 86400" | bc)
+
+
+
 
 : <<'END_COMMENT'
 uptime_output=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
@@ -160,7 +170,7 @@ if [ "$1" == "-f" ]; then
 fi
 
 echo 
-if (( DAYS_DIFFERENCE < 1 )); then
+if (( DIFF_DAYSE <= 1 )); then
     echo -e "Last error: \e[1;31mToday at $LAST_TIMESTAMP\e[0m"
 else
     echo -e "Last error: \e[1;32m$DAYS_DIFFERENCE days ago\e[0m  \e[90m$LAST_TIMESTAMP\e[0m"
