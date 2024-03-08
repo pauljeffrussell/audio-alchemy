@@ -563,7 +563,8 @@ def alchemy_app_runtime():
             ##logger.info(f'RFID Read: {rfid_code}')
             ## TAGS will only be read once     
             if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
-                is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
+                is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) or \
+                is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_PAUSE_PLAYER) ):
                 ## you just read a command card that needs to work while an album is playing.
                 
                 if ( rfid_code != LAST_COMMAND_CARD ):
@@ -750,10 +751,10 @@ def command_card_handler(rfid_code):
         play_album_of_the_day()
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Album of the day", "COMMAND_PLAY_ALBUM_OF_THE_DAY", rfid_code)        
         return True 
-    elif (command_code == CONFIG.COMMAND_STOP_PLAYER):
-        logger.debug('Stopping player.')
-        aaplayer.pause_track()
-        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Pause Track", "COMMAND_STOP_PLAYER", rfid_code)
+    elif (command_code == CONFIG.COMMAND_PLAY_PAUSE_PLAYER):
+        logger.debug('Play/Pause player.')
+        aaplayer.play_pause_track()
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play/Pause Track", "COMMAND_PLAY_PAUSE_PLAYER", rfid_code)
         return True
     elif (command_code == CONFIG.COMMAND_REPEAT_ALBUM):
         ## set the current album to repeat.
@@ -1552,6 +1553,53 @@ def thanksgiving(year):
     return datetime(year, 11, day).date()
 
 
+def find_nth_day(year: int, month: int, day_of_week: str, occurrence: int) -> str:
+    """
+    Finds the date of the nth occurrence of a specific day of the week in a given month and year.
+    
+    Parameters:
+        year (int): The year for which the date is to be found.
+        month (int): The month for which the date is to be found. (1 for January, 2 for February, etc.)
+        day_of_week (str): The day of the week to find. Must be one of "Monday", "Tuesday", "Wednesday",
+                           "Thursday", "Friday", "Saturday", or "Sunday".
+        occurrence (int): The occurrence of the day to find. For example, 1 for the first occurrence of the day,
+                          2 for the second, and so on.
+    
+    Returns:
+        str: The date of the specified occurrence of the day in YYYYMMDD format.
+    
+    Raises:
+        ValueError: If `day_of_week` is not a valid day name.
+    """
+    # Map day of the week from string to the corresponding calendar module constant
+    days = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+    if day_of_week not in days:
+        raise ValueError(f"Invalid day_of_week: {day_of_week}. Must be one of {list(days.keys())}.")
+    
+    day_of_week_num = days[day_of_week]
+
+    # Use datetime to find the first day of the month
+    first_day_of_month = datetime(year, month, 1)
+    first_day_of_week = first_day_of_month.weekday()
+
+    # Calculate the difference between the target day of the week and the first day of the month
+    days_until_target = (day_of_week_num - first_day_of_week) % 7
+
+    # Calculate the date of the first occurrence of the target day
+    first_occurrence = first_day_of_month + timedelta(days=days_until_target)
+
+    # Calculate the date of the nth occurrence
+    nth_occurrence = first_occurrence + timedelta(weeks=occurrence-1)
+
+    # Return the date formatted as YYYYMMDD
+    return nth_occurrence.strftime('%Y%m%d')
+
+
+
+
+
+
+
 def is_between_thanksgiving_and_christmas_inclusive():
     """
     Determines if the current date is between Thanksgiving and Christmas inclusive
@@ -1601,8 +1649,14 @@ def get_assigned_aotd_for_today(date_to_check):
     ## if the date provided matches a field, then return that rfid
     if aotd_rfid != 0:
         return aotd_rfid
-    elif date_to_check == thanksgiving(int(year)).strftime('%Y%m%d'):
+    elif date_to_check == thanksgiving(int(year)).strftime('%Y%m%d'): ##if it's thanksgiving
+        ##checking if it's thanksgiving
         aotd_rfid = lookup_field_by_field(DB, 'aotd_date', "thanksgiving", 'rfid')
+        if aotd_rfid != 0:
+            return aotd_rfid
+    elif date_to_check == find_nth_day(int(year), 2, "Monday", 3): ##if it's President's day
+        ##checking if it's President's day
+        aotd_rfid = lookup_field_by_field(DB, 'aotd_date', "presidentsday", 'rfid')
         if aotd_rfid != 0:
             return aotd_rfid
     

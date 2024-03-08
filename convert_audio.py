@@ -17,6 +17,7 @@ import logging
 import subprocess
 import configfile as CONFIG
 import numpy as np
+import argparse
 
 
 logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logging.DEBUG)
@@ -160,7 +161,7 @@ def convert_audio(source_file, source_folder, destination_folder):
 
 
 
-def main():
+def main(bulk_run, dryrun):
     global DB
     
     #try:
@@ -172,12 +173,27 @@ def main():
 
     #list_non_converted_albums()
     
+    
+    if (dryrun == True):
+        print("\n")
+        print("###############################")
+        print("\n\nDRY RUN MODE\n\nThe following folders will be converted\n")
+        check_directories()
+        #we jsut need to know what would download
+        
+        print("\n\n\n\n")
+        exit()
+    
+    
     # Test the function
     check_directories()
     #print(f"Missing Directories: {missing}")
     
+    
+    
+    
 
-    BULK_RUN = True
+    BULK_RUN = bulk_run
     if BULK_RUN:
         for idx, source_folder_name in enumerate(TBD_DOWNLOAD):
             source_folder = LIBRARY_SOURCE_FOLDER + source_folder_name
@@ -189,8 +205,8 @@ def main():
                 logging.debug (f'Album folder {source_folder} exists. Starting conversion')
                 for source_file in os.listdir(source_folder): 
                     convert_audio(source_file, source_folder, destination_folder)
-                else:
-                   logging.debug (f'Did not find folder {source_folder} . Skipping conversion') 
+            else:
+                logging.debug (f'Did not find folder {source_folder} . Skipping conversion') 
     else:        
         running = True
         while running:
@@ -199,7 +215,7 @@ def main():
         
            
         
-            if number < 0:
+            if (input_value == 'x' or input_value == ''):
                 exit()
             else:
             
@@ -219,11 +235,30 @@ def main():
             else:
                 list_non_converted_albums()
             
-        
+    if (len(TBD_DOWNLOAD) > 0):
+        print("\n\nConverstion complete for these folders:\n")
+        for idx, album in enumerate(TBD_DOWNLOAD):
+            print("{}  {}".format(idx, album))
+    else:
+        print("All folders already converted")
 
 
-main()
+if __name__ == "__main__":
     
+    parser = argparse.ArgumentParser(description='Convert files.')
+
+    # Add the email flag
+    parser.add_argument('--all', action='store_true', help='Set this flag if you all folders to convert instead of picking the folder.')
+    
+    # Add the email flag
+    parser.add_argument('--dryrun', action='store_true', help='Set this flag if you want a dry run to see what will happen.')
+
+    args = parser.parse_args()
+  
+    main(args.all, args.dryrun)
+    
+
+
 
 
 
