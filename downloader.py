@@ -20,6 +20,7 @@ import pandas as pd
 
 import logging
 import configfile as CONFIG
+import argparse
 
 logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logging.INFO)
 
@@ -32,9 +33,8 @@ LIBRARY_SOURCE_FOLDER = "./webm/" # This is where we put the full source files.
 # Use these two parameters to identify the google sheet with your album database
 DB_SHEET_ID = CONFIG.DB_SHEET_ID
 DB_SHEET_NAME = CONFIG.DB_SHEET_ID
-BULK_DOWNLOAD = CONFIG.BULK_DOWNLOAD
 
-
+REPORT = ""
 
 
 DB = pd.DataFrame()
@@ -93,7 +93,7 @@ class loggerOutputs:
 #  
 ##################################################################################### 
 def download_album(url, folder):
-    global FAILED_DOWNLOADS
+    global FAILED_DOWNLOADS, REPORT
     # Download the video
     
 
@@ -146,8 +146,8 @@ def download_album(url, folder):
         except:
             logging.warning(f'Failed to Download Track. {url}')
     logging.info("Completed album download.")
-    logging.info(f'{FAILED_DOWNLOADS} Failed File Downloads')
-
+    logging.info(f"\n\n{FAILED_DOWNLOADS} Failed File Downloads for {folder}\n\n")
+    REPORT = REPORT + "\n" f"{FAILED_DOWNLOADS} Failed File Downloads for {folder}"
 
 """
 Finds a given value in a given column of the DB and returns the value from another column in that row.
@@ -204,9 +204,7 @@ def lookup_album_url_by_field(df, field, value_to_lookup):
 def list_non_downloaded_albums():
     global DB, TBD_DOWNLOAD, LIBRARY_SOURCE_FOLDER, TBD_NO_DOWNLOAD
     
-    print("\n\n\n")
-    print("#######  Choose an Album to Download   #######")
-    print("\n")
+    
     TBD_DOWNLOAD = []
     for album_folder_name in DB['folder'].values:
         #url = lookup_album_url_by_album_name(DB, album_name)
@@ -238,46 +236,65 @@ def list_non_downloaded_albums():
                 TBD_DOWNLOAD.append(album_folder_name)
 
     
-    #print out the list of available 
-    
     if len(TBD_DOWNLOAD) == 0:
         print ('All albums with links downloaded.')
     else:
+        
         for idx, album in enumerate(TBD_DOWNLOAD):
             print("{}  {}".format(idx, album))
     
-        # This is the bulk Downloader    
-        if BULK_DOWNLOAD == True:
-            for idx, x in enumerate(TBD_DOWNLOAD):
-                print("Downloading", idx, "  ", x)
-                folder = LIBRARY_SOURCE_FOLDER + x
-                url_to_download = lookup_album_url_by_field(DB, 'folder', x)
-                if url_to_download == 'gdrive' or url_to_download == '':
-                    print("You need to get this from google drive\n\n")
-                else:
-                    download_album(url_to_download,folder)
-            print("\n\n#######################################")
-            print("            BULK DOWNLOAD COMPLETE")
-            print("#######################################\n")
-    
 
 
 
 
-def main():
-    global DB
+def main(bulk_download, dryrun):
+    global DB, REPORT
     
     #try:
     # Load the database of RFID tags and their matching albums
     DB = load_database()
 
 
-    if BULK_DOWNLOAD == True:
-        list_non_downloaded_albums()
-    else:
 
+    if (dryrun == True):
+        print("\n")
+        print("###############################")
+        print("\n\nDRY RUN MODE\n\nThe following folders will be downloaded\n")
+        list_non_downloaded_albums()
+        #we jsut need to know what would download
+        
+        print("\n\n\n\n")
+        exit()
+        
+        
+    ## figure out what to download.
+   
+    
+    
+    if bulk_download == True:
+        ## download all the albums that aren't downloaded
+        list_non_downloaded_albums()
+        for idx, x in enumerate(TBD_DOWNLOAD):
+            print("Downloading", idx, "  ", x)
+            folder = LIBRARY_SOURCE_FOLDER + x
+            url_to_download = lookup_album_url_by_field(DB, 'folder', x)
+            if url_to_download == 'gdrive' or url_to_download == '':
+                print("You need to get this from google drive\n\n")
+            else:
+                download_album(url_to_download,folder)
+        print("\n\n#######################################")
+        print("            BULK DOWNLOAD COMPLETE")
+        print("#######################################\n")
+        
+    else:
         running = True
+        
+        print("\n\n\n")
+        print("#######  Choose an Album to Download   #######")
+        print("\n")
+        
         while running:
+
             list_non_downloaded_albums()
             input_value = input('Enter a number to download the album (x to exit): ')
         
@@ -298,11 +315,24 @@ def main():
                     download_album(url_to_download,folder)
             
 
-            
+
+    print(REPORT)    
         
 
 
-main()
+if __name__ == "__main__":
+    
+    parser = argparse.ArgumentParser(description='Convert files.')
+
+    # Add the email flag
+    parser.add_argument('--all', action='store_true', help='Set this flag if you all folders to convert instead of picking the folder.')
+    
+    # Add the email flag
+    parser.add_argument('--dryrun', action='store_true', help='Set this flag if you want a dry run to see what will happen.')
+
+    args = parser.parse_args()
+  
+    main(args.all, args.dryrun)
     
 
 

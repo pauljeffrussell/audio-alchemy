@@ -112,20 +112,24 @@ def write_to_gsheet(sheet_name, row_data):
         spreadsheet.worksheet(sheet_name).append_row(row_data)
         logging.debug(f'{sheet_name} update successful.')
     
-    except requests.exceptions.ConnectionError:
-        logger.error(f'Failed to send to {sheet_name} due to a network connection error.')
+        """ 
+        ## Commented this out 2024-02-18. I was getting a lot of runtime issues with the specifc 
+        ## exceptions not being imported, and I couldn't see a good reason to keep them all since the {e} should
+        ## tell me everthing
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Failed to send to {sheet_name} due to a network connection error.\nDid not write {row_data}\n\n{e}")
         
-    except requests.exceptions.Timeout:
-        logger.error(f'Request to log to {sheet_name} timed out.')
+        except requests.exceptions.Timeout:
+            logger.error(f'Request to log to {sheet_name} timed out.')
 
-    except AccessTokenRefreshError:
-        logger.error(f'Request to log to {sheet_name} failed. Authentication token refresh failed. Please check your credentials.')
+        except AccessTokenRefreshError:
+            logger.error(f'Request to log to {sheet_name} failed. Authentication token refresh failed. Please check your credentials.')
 
-    except gspread.exceptions.APIError as e:
-        logger.error(f'Failed to log to {sheet_name} due to an API error: {e}')
-        
+        except gspread.exceptions.APIError as e:
+            logger.error(f'Failed to log to {sheet_name} due to an API error: {e}')
+        """        
     except Exception as e:
-        logger.error(f'While logging to {sheet_name}, an unexpected error occurred: {e}')    
+        logger.error(f"While logging to {sheet_name}.\nData not written:{row_data}.\n\nAn unexpected error occurred: {e}")    
 
 
 
