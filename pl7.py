@@ -324,12 +324,13 @@ def unpause_track():
     global MUSIC_PAUSED
     MUSIC_PAUSED = 0
     pygame.mixer.music.unpause()
+    logger.info('Unpaused album.')
 
 def pause_track():
     global MUSIC_PAUSED
     MUSIC_PAUSED = 1
     pygame.mixer.music.pause()
-    logger.info('Pausing album.')
+    logger.info('Paused album.')
 
 def play_current_track():
     global TRACK_LIST, current_index, MUSIC_PAUSED, PREVIOUS_FOLDER, MUSIC_STOPPED
@@ -394,33 +395,41 @@ def jump_to_track(track_index):
 def next_track():
     global current_index, TRACK_LIST, MUSIC_PAUSED, MUSIC_STOPPED
   
-    MUSIC_PAUSED = 0
-    # Stop the mixer
-    pygame.mixer.music.stop()
+  
+    if is_playing():
+        ## The track is playing. Let's go to the next   
+        MUSIC_PAUSED = 0
+        # Stop the mixer
+        pygame.mixer.music.stop()
     
     
-    # Get the next index
-    current_index += 1
-    if (ALBUM_REPEAT == False and current_index >= len(TRACK_LIST)):
-        current_index = 0
-        # 2024-02-05 removed these two lines. Since I added logging 
-        # to the play_current_track function it's become obvious that 
-        # I'm playing these tracks for no reason
-        # play_current_track()
-        # pause_track()
-        MUSIC_STOPPED = 1
-        MUSIC_PAUSED = 1
-        logger.info(f'Reached end of album. Press play to restart album.')
-    elif (ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
-        ## The album reached it's end and should now restart
-        current_index = 0
-        play_current_track()
-        MUSIC_STOPPED = 0
-        logger.info(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
+        # Get the next index
+        current_index += 1
+        if (ALBUM_REPEAT == False and current_index >= len(TRACK_LIST)):
+            current_index = 0
+            # 2024-02-05 removed these two lines. Since I added logging 
+            # to the play_current_track function it's become obvious that 
+            # I'm playing these tracks for no reason
+            # play_current_track()
+            # pause_track()
+            MUSIC_STOPPED = 1
+            MUSIC_PAUSED = 1
+            logger.info(f'Reached end of album. Press play to restart album.')
+        elif (ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
+            ## The album reached it's end and should now restart
+            current_index = 0
+            play_current_track()
+            MUSIC_STOPPED = 0
+            logger.info(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
+        else:
+            # Load and play the next track
+            play_current_track()
+            MUSIC_STOPPED = 0
+            
     else:
-        # Load and play the next track
-        play_current_track()
-        MUSIC_STOPPED = 0
+        ## the music wasn't playing. Don't index the track, just start playing again where ever it stopped.
+        play_pause_track()
+        
 
 
 def prev_track():
@@ -471,6 +480,29 @@ def play_feedback(feedback_file):
     except Exception as e:
         logger.error(f'Unable to play feedback sound "{feedback_file}" {e} ')
         
+        
+    
+def play_speech(speech_file):
+    
+    
+    # turn down the music so we can hear the speaking
+    pygame.mixer.music.set_volume(0.3)
+    time.sleep(0.2)
+    
+    # Load the short sound effect
+    speech = pygame.mixer.Sound(speech_file)
+    speech.set_volume(1.0)  # Set volume for the short sound
+    
+    speech.play()
+    
+    #Wait for the short sound to finish (simplistic timing control)
+    pygame.time.wait(int(speech.get_length() * 1000))
+    
+    time.sleep(0.2)
+    
+    ## return the music audio back to normal
+    pygame.mixer.music.set_volume(1)
+    
         
 def report_track(current_track):
     global PREVIOUS_FOLDER, SONG_SHUFFLE

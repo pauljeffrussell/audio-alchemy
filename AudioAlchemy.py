@@ -27,6 +27,7 @@ import argparse
 import re
 import traceback
 import aareporter
+from gtts import gTTS
 
 
 
@@ -569,7 +570,7 @@ def alchemy_app_runtime():
                 
                 if ( rfid_code != LAST_COMMAND_CARD ):
                     ## you read a command code you haven't seen reciently.
-                    logger.debug(f'RFID Read: COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK')
+                    logger.debug(f'RFID Read: {rfid_code}')
                     LAST_COMMAND_CARD = rfid_code
                     handle_rfid_read(rfid_code)      
                 
@@ -800,18 +801,23 @@ def command_card_handler(rfid_code):
         aaplayer.play_in_order_from_random_track()
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play in order from random track", "COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK", rfid_code)
         return True 
-    elif (command_code == CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME):
+    elif (command_code == CONFIG.COMMAND_SPEEK_CURRENT_TRACK_NAME):
         ## We're going to email the current track to the 
         current_track_for_email = aaplayer.get_current_track()
         if current_track_for_email != None:
                         
+            
+            speak_current_track()
+            
+            """ THIS IS THE WORKING EMAIL CODE. YOU"RE REPLACING IT WITH SPEACH
             ## play the feedback sound that the command card is being processed.
             aaplayer.play_feedback(CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME_FEEDBACK)
             
             #send an email with that track
             send_email_with_current_track(current_track_for_email)
+            """
             
-        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Email Album Name", "COMMAND_EMAIL_CURRENT_TRACK_NAME_FEEDBACK", rfid_code)
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Speak Album and Track Name", "COMMAND_SPEEK_CURRENT_TRACK_NAME", rfid_code)
         return True
     else:
         return False
@@ -1182,18 +1188,42 @@ def get_albums_for_label(label, shuffle_albums):
 
     logger.debug(f'Looking up albums with label: {label}...')
 
-    #matching_rows = DB[DB['labels'].apply(lambda x: label in x)]
-    matching_rows = DB[DB['labels'].astype(str).str.contains(label)]
+    #2024-03-09 added this code so I could add postfix numbers to the lables to force a sort order
+    # Assuming 'DB' is your DataFrame and 'label' is the string you're looking for.
+    matching_rows = DB[DB['labels'].astype(str).str.contains(label)].copy()
+
+    # Extract the numeric part from the 'labels' column and fill non-numeric parts with a large number for proper sorting
+    matching_rows['sort_key'] = matching_rows['labels'].str.extract(r':(\d+)$').fillna(9999).astype(int)
+
+    # Sort by the new column 'sort_key'
+    matching_rows = matching_rows.sort_values(by='sort_key')
+
+    # Drop the 'sort_key' column if you don't want it in the final result
+    matching_rows = matching_rows.drop(columns=['sort_key'])
+    
+    
+    #2024-03-09 This was the old label matching code.
+    #matching_rows = DB[DB['labels'].astype(str).str.contains(label)]
+    
+    
+    
     #DB.query(condition)['folder']
     matching_folders = matching_rows.query("folder != '"+BLANK+"'")['folder']
     
-    # Convert the matching folders to a list
-    matching_folders_list = matching_folders.tolist()
+    logger.debug(f'Printing sorted label albums')
+    for folder in matching_folders:
+        logger.debug(folder)
+    
+
         
     if(shuffle_albums):
         random.shuffle(matching_folders_list)
-    else:
-        matching_folders_list.sort()
+    #else:
+    #    matching_folders_list.sort()
+
+
+    # Convert the matching folders to a list
+    matching_folders_list = matching_folders.tolist()
     
     matching_folders_list = [LIBRARY_CACHE_FOLDER + folder for folder in matching_folders_list]
 
@@ -1959,7 +1989,105 @@ def send_email_with_current_track(current_track_for_email):
         print(f"Error occurred: {e}")
 
 
+def speak_current_track():
+    
+    logger.debug(f'Attempting to speak the album and track names.')
+    
+    ##play audio feedback so the user knows the card tap worked
+    ## it'll take a second before the audio plays back
+    aaplayer.play_feedback(CONFIG.FEEDBACK_PROCESSING)
+    
+    try:
+        current_track_for_email = aaplayer.get_current_track()
+    
+        # Split by directory delimiter
+        parts = current_track_for_email.split('/')
 
+        # Assign album and track to separate variables
+        album_name = parts[4]
+        track_name_with_extension = parts[5]
+
+        # Use regex to extract the disk and track number if formatted as 'disk-track'
+        match = re.match(r'(\d+)-(\d+)', track_name_with_extension)
+        if match:
+            disk_number = str(int(match.group(1)))  # Remove leading zeros from disk number
+            track_number = str(int(match.group(2)))  # Remove leading zeros from track number
+        else:
+            # Fallback to just track number extraction if no dash is found
+            match = re.match(r'(\d+)', track_name_with_extension)
+            disk_number = ''  # Default value if disk number is not applicable
+            track_number = str(int(match.group(1))) if match else ''
+
+        # Remove track/disk number, metadata in brackets, and either file extension from track name
+        #file_name = re.sub(r'^\d+(-\d+)? - |\s*\[.*?\]\s*|\.webm?\.mp3$', '', track_name_with_extension)
+
+        # Remove track/disk number and clean up the file name
+        file_name = re.sub(r'^\d+(-\d+)?\s', '', track_name_with_extension)  # Remove the initial numbers and any spaces following them
+        # Adjusted regex to correctly remove .mp3 and .webm.mp3
+        file_name = re.sub(r'\.webm?\.mp3$', '', file_name)
+
+        # Correctly removing .mp3 extensions
+        file_name = re.sub(r'\.mp3$', '', file_name)
+    
+        # Remove periods from the file name, but preserve any extension handling
+        file_name = re.sub(r'\.', '', file_name)
+    
+        # Check if the remaining file_name is just digits (and possibly spaces), clear it if so
+        if re.fullmatch(r'\d+', file_name.strip()):
+            file_name = ''
+
+        # Build the description string based on available data
+        description_parts = [album_name]
+        if disk_number:
+            description_parts.append(f"Disk {disk_number}")
+        if track_number:
+            description_parts.append(f"Track {track_number}")
+        if file_name:
+            description_parts.append(file_name)
+
+        # Join all parts into a single string with proper formatting
+        description = ". ".join(description_parts) + '.'
+        
+        logger.debug(f'Text to convert to speech: {description}')
+        
+        try:
+            ## get the spoken audio from google in an mp3        
+            logger.debug(f'Getting mp3 from google')
+            tts = gTTS(text=description, lang='en')
+            tts.save(CONFIG.TEMP_SPEECH_MP3)  # Save the audio file
+        
+        
+            ## we need to convert to wave because pygame can't play the mp3 format outputted by google.
+            logger.debug(f'Converting mp3 to wav')
+            # Command to convert MP3 to WAV using ffmpeg
+            #command = ['ffmpeg', '-i', CONFIG.TEMP_SPEECH_MP3, CONFIG.TEMP_SPEECH_WAV, '-y']  # -y to overwrite without asking
+        
+            command = [
+                'ffmpeg',
+                '-i', CONFIG.TEMP_SPEECH_MP3,  # Input file
+                '-filter:a', 'volume=1.6',  # Increase volume by 50%
+                CONFIG.TEMP_SPEECH_WAV,  # Output file
+                '-y'  # Overwrite output file without asking
+            ]
+            subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        
+            logger.debug(f'Playing the resulting audio.')
+        
+        
+            aaplayer.play_speech(CONFIG.TEMP_SPEECH_WAV)
+        except:
+            logger.debug(f'Something went wrong getting or saving the audio.')
+            aaplayer.play_feedback(CONFIG.FEEDBACK_AUDIO_NOT_FOUND)
+        
+        # Now track_number holds the digits at the beginning of track_name, if any
+    
+    except Exception as e:
+        ## if anything goes wrong, write it to a log file.
+        ## Only Errors will be logged. 
+    
+        logger.error(f"An exception occurred while trying to speak the album and track name: {e}")
+    
 
 
 
