@@ -315,12 +315,16 @@ def read_db(csv):
     read in the db and return a pandas dataframe 
     with typed fields the way the ap expects it
     """
-    return pd.read_csv(csv, dtype={'genre_card': float, 'label_card': float, \
-                                   'shuffle_albums': float, 'shuffle_songs': float, \
-                                   'repeat': float, 'christmas_aotd': float, \
-                                   'exclude_from_random': float, 'aotd_date': str, \
-                                   'rfid': str, 'loaded_hq': str} )
-            
+    try:
+        return pd.read_csv(csv, dtype={'genre_card': float, 'label_card': float, \
+                                       'shuffle_albums': float, 'shuffle_songs': float, \
+                                       'repeat': float, 'christmas_aotd': float, \
+                                       'exclude_from_random': float, 'aotd_date': str, \
+                                       'rfid': str, 'loaded_hq': str, 'remember_position': float} )
+    except Exception as e:
+        ## this can happen if some chucklehead accidentally puts a letter in one of the fields 
+        ## that's supposed to have a float. And by some chcklehead, I, of course mean me.
+        logger.error(f'Error while reading the DB. {e}')
     
    
 
@@ -773,15 +777,20 @@ def command_card_handler(rfid_code):
         ## start playing the processing feedback sound
         aaplayer.play_feedback(CONFIG.COMMAND_STOP_AND_RELOAD_DB_FEEDBACK)
         
+        logger.debug('Loading DB from web.')
         ## while the sound is playing update the DB
         DB = load_database(True)
+        logger.debug('DB loaded from web.')
         
+        logger.debug('Waiting for 2.5 seconds for audio to complete.')
         ## wait for 2.5 seconds so the feedback audio can complete
         time.sleep(2.5)
         
+        logger.debug('Restaring the player.')
         ## reset the player. I'm not sure why this is here. It probably served a purpose a long time ago
         aaplayer.shutdown_player()
         aaplayer.startup()
+        logger.debug('Restaring complete.')
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Reload Database", "COMMAND_STOP_AND_RELOAD_DB", rfid_code)    
         CURRENT_ALBUM_SHUFFLED = False
         return True
@@ -844,7 +853,7 @@ def music_card_handler(rfid_code):
         
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code) )   
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)   
             CURRENT_ALBUM_SHUFFLED = False
         
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
@@ -860,7 +869,7 @@ def music_card_handler(rfid_code):
         
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code) )
+            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)
             CURRENT_ALBUM_SHUFFLED = False
         
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
@@ -881,7 +890,7 @@ def music_card_handler(rfid_code):
 
             if (len(tracks) > 0):
                 logger.debug (f'Album has tracks. Playing...')
-                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code) )
+                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)
                 CURRENT_ALBUM_SHUFFLED = False
             
             else:
@@ -1145,6 +1154,27 @@ def is_album_repeat(rfid_code):
         return False
 
 
+def is_album_remember_position(rfid_code):
+    """
+    Detremines if the album should have it's position remembered and used as the starting point.
+    
+    Attributes:
+    - rfid_code: an RFID code for a card
+
+    Returns:
+    Boolean: True if the albums should be played from the last place it stopped or paused. False otherwise.            
+    """
+    
+    logger.debug(f'Checking if RFID {rfid_code} should remember position.')
+    remember = lookup_field_by_field(DB, 'rfid', rfid_code, 'remember_position')  
+    if remember == 1:
+        logger.debug(f'YES RFID {rfid_code} should remember position.')
+        return True
+    else:
+        logger.debug(f'NO RFID {rfid_code} should not remember position.')
+        return False
+
+
 def get_albums_for_genre(genre, sub_genre, shuffle_albums):
     """
     Returns: a list of the paths to the library folders that match the provided genre and sub_genre    
@@ -1282,7 +1312,7 @@ def get_tracks(folders, shuffle_tracks):
            
             if (last_directory.startswith("label:") or last_directory.startswith("genre:")):
                 ## We should ignore this one
-                logger.info("Skipping folder {folder} because it's a label or genre db row.")
+                logger.info(f"Skipping folder {folder} because it's a label or genre db row.")
             else:
                 ## It's not a label or genre card so it should have a folder
                 ## If it doesn't exist, log the error so it's known. 
@@ -1893,7 +1923,7 @@ def play_random_albums():
     tracks = get_tracks(album_folder_list, False)
     if (len(tracks) > 0):
         logger.debug (f'Album has tracks. Playing...')
-        aaplayer.play_tracks(tracks, False, False)
+        aaplayer.play_tracks(tracks, False, False, False, 0)
     else:
         logger.warning (f'No tracks found for folder {album_folder}.')
 
