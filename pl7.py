@@ -8,6 +8,8 @@ import time
 import configfile as CONFIG
 import aareporter
 import traceback
+from audio_position_database import AudioPositionDatabase
+
 #os.environ['SDL_AUDIODRIVER'] = 'dsp'
 
 
@@ -43,10 +45,20 @@ ALBUM_LOADED = False # used to determine if I should cleanup pygame before start
 #ALBUM_SHUFFLE = False
 
 
-ALBUM_REPEAT = False
+S_ALBUM_REPEAT = False
 
-SONG_SHUFFLE = False
+S_SONG_SHUFFLE = False
+
 SONG_SHUFFLE_ORIGINAL_SETTING = False
+
+S_REMEMBER_POSITION = False
+
+S_ALBUM_RFID = None
+
+S_LAST_TRACK = 0
+
+S_LAST_POSITION = 0
+
 
 SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
@@ -54,6 +66,7 @@ DEVICE_NAME = 'Audio Adapter (Unitek Y-247A) Mono'
 
 PREVIOUS_FOLDER = None
 
+DB_AUDIO_POSITION = None
 
 ## keeps track of weather or not the tracks have all been played.
 ## This is True after the tracks have played, until someone starts playing them again.
@@ -68,21 +81,28 @@ MUSIC_STOPPED = 0
 
 
 def startup():
-    global ALBUM_REPEAT, ALBUM_LOADED, MUSIC_PAUSED, END_TRACK_INDEX, MUSIC_STOPPED, SONG_SHUFFLE
-    
+    global ALBUM_LOADED, MUSIC_PAUSED, END_TRACK_INDEX, MUSIC_STOPPED, DB_AUDIO_POSITION
+    global S_ALBUM_REPEAT, S_SONG_SHUFFLE, S_REMEMBER_POSITION, S_ALBUM_RFID, S_LAST_TRACK, S_LAST_POSITION
     
     #reset the state back to the beginning state so we don't get weirdness
     END_TRACK_INDEX = 0
     MUSIC_PAUSED = 1
     ALBUM_LOADED = False 
     #PLAYER_RUNNING = False
-    ALBUM_REPEAT = False
-    SONG_SHUFFLE = False
+    S_ALBUM_REPEAT = False
+    S_SONG_SHUFFLE = False
     SONG_SHUFFLE_ORIGINAL_SETTING = False
+    
+    S_REMEMBER_POSITION = False
+    
+    S_ALBUM_RFID = ''
+    S_LAST_TRACK = 0
+    S_LAST_POSITION = 0
     
     MIXER_LOADED = False
     MUSIC_STOPPED = 0
     
+    DB_AUDIO_POSITION = AudioPositionDatabase()
     
     ## It's possible for the audio drivers not to be loaded at the point this is called
     ## So we try and if it doesn't work, we wait 5 seconds and try again.
@@ -107,9 +127,9 @@ def set_logger(external_logger):
 
 def set_repeat_album(repeat):
     """ Tells the current album to repeat. """
-    global ALBUM_REPEAT
+    global S_ALBUM_REPEAT
     
-    ALBUM_REPEAT = repeat
+    S_ALBUM_REPEAT = repeat
 
 
 
@@ -140,8 +160,9 @@ def keep_playing():
 
     
     
-def play_tracks(tracks, repeat, song_shuffle):
-    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, ALBUM_REPEAT, TRACK_LIST_ORIGINAL_ORDER, SONG_SHUFFLE 
+def play_tracks(tracks, repeat, shuffle, remember_position, rfid_code):
+    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, TRACK_LIST_ORIGINAL_ORDER 
+    global S_ALBUM_REPEAT, S_SONG_SHUFFLE, S_REMEMBER_POSITION, S_ALBUM_RFID, S_LAST_TRACK, S_LAST_POSITION
 
 
     if ALBUM_LOADED:
@@ -163,13 +184,34 @@ def play_tracks(tracks, repeat, song_shuffle):
     logger.debug(f'Total Tracks to play: {END_TRACK_INDEX}')
     
     # set this global so the keep playing and next functions know if they should repeat at album end.
-    ALBUM_REPEAT = repeat
+    S_ALBUM_REPEAT = repeat
     
     # set this global so we know if the album songs are shuffled. If they are only record the 0 index and not every
     ## change in folder. see play_cuurrent_track
-    SONG_SHUFFLE = song_shuffle
-    SONG_SHUFFLE_ORIGINAL_SETTING = song_shuffle
+    S_SONG_SHUFFLE = shuffle
+    SONG_SHUFFLE_ORIGINAL_SETTING = S_SONG_SHUFFLE
     
+    
+    S_REMEMBER_POSITION = remember_position
+    S_ALBUM_RFID = rfid_code
+    
+    if S_REMEMBER_POSITION:
+        ## we're supposed to remember the position of this album when it stops.
+        ## and play from there when we restart
+        
+        logger.debug(f"Looking up position info for RFID: {S_ALBUM_RFID}")
+        position_info = DB_AUDIO_POSITION.get_position_info(S_ALBUM_RFID)
+        if position_info:
+            ## the DB has some position info
+            
+            S_LAST_TRACK = position_info[0]
+            S_LAST_POSITION = position_info[1]
+            logger.debug(f"Found saved position info for RFID: {S_ALBUM_RFID}, Track: {position_info[0]}, Time in Seconds: {position_info[1]}")
+        else:
+            logger.debug(f"No saved position info found in the DB for RFID: {S_ALBUM_RFID}")
+    else:
+        S_LAST_TRACK = 0
+        S_LAST_POSITION = 0
     
     
     ## this should really be done by passing the CONFIG variables into the play tracks
@@ -182,7 +224,10 @@ def play_tracks(tracks, repeat, song_shuffle):
     
     # Play the first track
     #current_track = TRACK_LIST[current_index]
-    play_current_track()
+    
+    ## this is the only time we tell this function to honor 
+    ## remembering the track position. Otherwise, we could never leave the track.
+    play_current_track(True)
 
     MUSIC_PAUSED = 0
     ALBUM_LOADED = True
@@ -248,11 +293,11 @@ def jump_to_previous_album():
 
 
 def shuffle_current_songs():
-    global TRACK_LIST, current_index, SONG_SHUFFLE
+    global TRACK_LIST, current_index, S_SONG_SHUFFLE
     
     pygame.mixer.music.stop()
     
-    SONG_SHUFFLE = True
+    S_SONG_SHUFFLE = True
     
     random.shuffle(TRACK_LIST)
     
@@ -260,7 +305,7 @@ def shuffle_current_songs():
     play_current_track()
 
 def unshuffle_current_songs():
-    global TRACK_LIST, current_index, TRACK_LIST_ORIGINAL_ORDER, SONG_SHUFFLE, SONG_SHUFFLE_ORIGINAL_SETTING
+    global TRACK_LIST, current_index, TRACK_LIST_ORIGINAL_ORDER, S_SONG_SHUFFLE, SONG_SHUFFLE_ORIGINAL_SETTING
     
     pygame.mixer.music.stop()
     
@@ -269,8 +314,8 @@ def unshuffle_current_songs():
     ## moreover, of you sort that list, you're going to get albums overlapping each other.
     TRACK_LIST = TRACK_LIST_ORIGINAL_ORDER.copy()
     
-    ## we don't put SONG_SHUFFLE back at this point because we 
-    SONG_SHUFFLE = SONG_SHUFFLE_ORIGINAL_SETTING
+    ## we don't put S_SONG_SHUFFLE back at this point because we 
+    S_SONG_SHUFFLE = SONG_SHUFFLE_ORIGINAL_SETTING
     
     
     current_index = 0
@@ -284,7 +329,7 @@ def play_in_order_from_random_track():
         new_track_index = random.randint(0, len(TRACK_LIST) - 1)
         logger.debug(f'Jumping to track: {new_track_index} and continuing to play in order...')
         jump_to_track(new_track_index)
-        ALBUM_REPEAT = True
+        S_ALBUM_REPEAT = True
     except:
         logger.error("Unable to jump to a random track. There was a problem picking a random index.")
         
@@ -331,17 +376,50 @@ def pause_track():
     MUSIC_PAUSED = 1
     pygame.mixer.music.pause()
     logger.info('Paused album.')
+    save_position()
+    
 
-def play_current_track():
+def save_position():
+    
+    if S_REMEMBER_POSITION:
+        
+        if (current_index == S_LAST_TRACK):
+            position = pygame.mixer.music.get_pos() + S_LAST_POSITION
+        else:
+            position = pygame.mixer.music.get_pos()
+            
+            
+        if (position > 10):
+            position = position - 10
+        else:
+            position = 0
+        
+        DB_AUDIO_POSITION.add_or_update_entry(S_ALBUM_RFID, current_index, position)
+        logger.debug(f'Saved Track and position. track {current_index}, position: {position}')
+
+
+
+
+def play_current_track(check_remember=False):
     global TRACK_LIST, current_index, MUSIC_PAUSED, PREVIOUS_FOLDER, MUSIC_STOPPED
     
     current_track = None
     try:
 
-        current_track = TRACK_LIST[current_index]
-        logger.info(f'Starting: {current_track}')
-        pygame.mixer.music.load(current_track)
-        pygame.mixer.music.play()
+        if (check_remember and S_REMEMBER_POSITION):
+            current_index = S_LAST_TRACK 
+            current_track = TRACK_LIST[current_index]
+            logger.info(f'Starting: {current_track}')
+            pygame.mixer.music.load(current_track)
+            pygame.mixer.music.rewind()
+            position = S_LAST_POSITION/1000
+            pygame.mixer.music.play(start=position)
+        else:
+            current_track = TRACK_LIST[current_index]
+            logger.info(f'Starting: {current_track}')
+            pygame.mixer.music.load(current_track)
+            pygame.mixer.music.play() 
+            
         MUSIC_PAUSED = 0
         MUSIC_STOPPED = 0
                 
@@ -392,9 +470,18 @@ def jump_to_track(track_index):
   
 
 
-def next_track():
+def next_track(button_press=True):
     global current_index, TRACK_LIST, MUSIC_PAUSED, MUSIC_STOPPED
   
+    
+    """ Started writing this code to enable skip ahead 15 seconds 
+        when listening to podcasts / things where you'd remember the position.
+    
+    if (button_press==True and S_REMEMBER_POSITION == True):
+        ## we're listening to something where it's going to stop and start
+        ## and we might want to jump around a bit
+        fast_forward()
+        return"""
   
     if is_playing():
         ## The track is playing. Let's go to the next   
@@ -405,7 +492,7 @@ def next_track():
     
         # Get the next index
         current_index += 1
-        if (ALBUM_REPEAT == False and current_index >= len(TRACK_LIST)):
+        if (S_ALBUM_REPEAT == False and current_index >= len(TRACK_LIST)):
             current_index = 0
             # 2024-02-05 removed these two lines. Since I added logging 
             # to the play_current_track function it's become obvious that 
@@ -415,7 +502,7 @@ def next_track():
             MUSIC_STOPPED = 1
             MUSIC_PAUSED = 1
             logger.info(f'Reached end of album. Press play to restart album.')
-        elif (ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
+        elif (S_ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
             ## The album reached it's end and should now restart
             current_index = 0
             play_current_track()
@@ -505,14 +592,14 @@ def play_speech(speech_file):
     
         
 def report_track(current_track):
-    global PREVIOUS_FOLDER, SONG_SHUFFLE
+    global PREVIOUS_FOLDER, S_SONG_SHUFFLE
     folder, file_name = get_folder_and_file(current_track)
     logger.debug(f'folder: {folder}')
     logger.debug(f'file: {file_name}')
     aareporter.log_track_play(folder, file_name)
     
     logger.debug(f'preparing to log album')
-    if (PREVIOUS_FOLDER != folder and SONG_SHUFFLE == False ):
+    if (PREVIOUS_FOLDER != folder and S_SONG_SHUFFLE == False ):
         # we're playing a new album. We ignore song shuffled albums because
         # they will create lots of album plays as they jump thorugh albums
         logger.debug(f'logging album')
@@ -541,6 +628,8 @@ def shutdown_player():
     #MY_CUSTOM_EVENT = pygame.USEREVENT + 1
     #pygame.event.post(pygame.event.Event(MY_CUSTOM_EVENT))
     #time.sleep(3)
+    
+    pause_track()
     pygame.mixer.music.stop()
     pygame.quit()
     logger.debug('Completed Player Shutdown')
