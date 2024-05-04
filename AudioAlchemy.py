@@ -413,7 +413,7 @@ def set_ststem_date():
     
     ATTEMPTS_MADE = 0
     
-    while (not IS_SYSTEM_DATE_SET and ATTEMPTS_MADE < 3):
+    if (IS_SYSTEM_DATE_SET == False):
         ## the idea here is to only do this if we haven't already 
         ## set the date and we haven't failed a lot already. 
         ##
@@ -449,6 +449,14 @@ def set_ststem_date():
             logger.error(f"{stack_trace}")
             time.sleep(3)
 
+
+    if (IS_SYSTEM_DATE_SET == False ):
+        ## We couldn't get the actual date, so lets take our best guess
+        set_date_from_last_aotd()
+
+
+
+
     
 def backup_cache(cache_file):
     logging.debug('Starting backup_cache().')
@@ -473,9 +481,46 @@ def is_rfid_codes_match(rfid1,rfid2):
     return str(rfid1) == str(rfid2)
     
     
+def set_date_from_last_aotd():
+        
+    if not DB_AOTD_CACHE.empty:
+        try:
+
+            last_date = DB_AOTD_CACHE['date'].iloc[-1]
+
+            year = date_str[:4]
+            month = date_str[4:6]
+            day = date_str[6:8]
+
+            # Format the date and time for the 'date' command (YYYY-MM-DD HH:MM)
+            cmd = f"date -s '{year}-{month}-{day} 00:01:01'"
+            
+            logging.debug(f'Setting system date {cmd}')
+            # Execute the command to set the date
+            subprocess.run(['sudo', 'bash', '-c', cmd])    
+
+            ## Note that we're really just guessing at the date, so we're not going to 
+            ## set IS_SYSTEM_DATE_SET = True becaause we want alchemy to try to set the date later.
+            logging.info(f'Set system date to last known Album of the Date date: {cmd}')
+
+        except Exception as e:
+            logger.error(f"An exception occurred while trying to set the system date: {e}") 
+    else:
+        logger.error(f"Unable to set temp system date from AOTD Cache. {e}") 
+        
+    
+
 
 def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE, DB_AOTD_CACHE
+
+
+
+    ## Load the album of the day cache.
+    ## If there isn't one, make one.
+    ## This has to happen first, because we need the file to be there
+    ## for the next step
+    DB_AOTD_CACHE = load_album_of_the_day_cache()
 
 
     ## the read only OS thinks the date is June 2023 on reboot. In order for 
@@ -492,11 +537,7 @@ def alchemy_app_runtime():
 
 
 
-    ## Load the album of the day cache.
-    ## If there isn't one, make one.
-    ## This has to happen first, because we need the file to be there
-    ## for the next step
-    DB_AOTD_CACHE = load_album_of_the_day_cache()
+    
 
    
     ## We set this at statup so that we don't send an email
@@ -542,7 +583,7 @@ def alchemy_app_runtime():
     ## We track command cards differently than we count other cards. 
     COUNT_SINCE_COMMAND_CARD_REMOVED = 0
     
-    LOOP_SLEEP_DURATION = .1
+    LOOP_SLEEP_DURATION = .2
     
     
     ## The COUNT_SINCE_CARD_REMOVED is incremented every time the loop below
@@ -759,7 +800,8 @@ def command_card_handler(rfid_code):
     elif (command_code == CONFIG.COMMAND_PLAY_PAUSE_PLAYER):
         logger.debug('Play/Pause player.')
         aaplayer.play_pause_track()
-        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play/Pause Track", "COMMAND_PLAY_PAUSE_PLAYER", rfid_code)
+        ##2024-05-03 Commented this out, because we don't need to report on what is effectively a button push and not a command card.
+        ##aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play/Pause Track", "COMMAND_PLAY_PAUSE_PLAYER", rfid_code)
         return True
     elif (command_code == CONFIG.COMMAND_REPEAT_ALBUM):
         ## set the current album to repeat.
@@ -1245,15 +1287,20 @@ def get_albums_for_label(label, shuffle_albums):
         logger.debug(folder)
     
 
-        
-    if(shuffle_albums):
-        random.shuffle(matching_folders_list)
+    #2024-05-03 moved this because it was causing an exception    
+    #if(shuffle_albums):
+    #    random.shuffle(matching_folders_list)
     #else:
     #    matching_folders_list.sort()
 
 
     # Convert the matching folders to a list
     matching_folders_list = matching_folders.tolist()
+
+    if(shuffle_albums):
+        random.shuffle(matching_folders_list)
+    #else:
+    #    matching_folders_list.sort()
     
     matching_folders_list = [LIBRARY_CACHE_FOLDER + folder for folder in matching_folders_list]
 

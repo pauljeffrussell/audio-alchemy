@@ -59,6 +59,9 @@ S_LAST_TRACK = 0
 
 S_LAST_POSITION = 0
 
+## the number of times the current album has repeated
+COUNT_REPEATS = 0
+
 
 SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
 
@@ -161,7 +164,7 @@ def keep_playing():
     
     
 def play_tracks(tracks, repeat, shuffle, remember_position, rfid_code):
-    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, TRACK_LIST_ORIGINAL_ORDER 
+    global TRACK_LIST, END_TRACK_INDEX, current_index, ALBUM_LOADED, MUSIC_PAUSED, TRACK_LIST_ORIGINAL_ORDER, COUNT_REPEATS 
     global S_ALBUM_REPEAT, S_SONG_SHUFFLE, S_REMEMBER_POSITION, S_ALBUM_RFID, S_LAST_TRACK, S_LAST_POSITION
 
 
@@ -190,6 +193,7 @@ def play_tracks(tracks, repeat, shuffle, remember_position, rfid_code):
     ## change in folder. see play_cuurrent_track
     S_SONG_SHUFFLE = shuffle
     SONG_SHUFFLE_ORIGINAL_SETTING = S_SONG_SHUFFLE
+    COUNT_REPEATS = 0
     
     
     S_REMEMBER_POSITION = remember_position
@@ -471,7 +475,7 @@ def jump_to_track(track_index):
 
 
 def next_track(button_press=True):
-    global current_index, TRACK_LIST, MUSIC_PAUSED, MUSIC_STOPPED
+    global current_index, TRACK_LIST, MUSIC_PAUSED, MUSIC_STOPPED, COUNT_REPEATS
   
     
     """ Started writing this code to enable skip ahead 15 seconds 
@@ -504,10 +508,19 @@ def next_track(button_press=True):
             logger.info(f'Reached end of album. Press play to restart album.')
         elif (S_ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
             ## The album reached it's end and should now restart
+
             current_index = 0
-            play_current_track()
-            MUSIC_STOPPED = 0
-            logger.info(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
+            
+            ## This is here to make sure we don't just keep playing an album forever.
+            ## This can happen if someone turns off the amplifier without hitting pause. 
+            if (COUNT_REPEATS < CONFIG.MAX_REPLAY_COUNT):
+                COUNT_REPEATS = COUNT_REPEATS + 1
+                play_current_track()
+                MUSIC_STOPPED = 0
+                logger.info(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
+            else:
+                logger.info(f'Completed max allowed repeats of album. Player stopped automatically.')
+            
         else:
             # Load and play the next track
             play_current_track()
