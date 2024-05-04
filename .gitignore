@@ -3,8 +3,6 @@ dbcache/*
 test/*
 cred/*
 library/*
-library_mp3/*
-library_new/*
 webm/*
 ytm/*
 logs/*
@@ -17,3 +15,6 @@ helper/*
 keys/*
 library_unused_tracks/*
 os/*
+_manifest/*
+dbcache/*
+manual_audio/*
