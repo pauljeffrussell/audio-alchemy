@@ -488,9 +488,9 @@ def set_date_from_last_aotd():
 
             last_date = DB_AOTD_CACHE['date'].iloc[-1]
 
-            year = date_str[:4]
-            month = date_str[4:6]
-            day = date_str[6:8]
+            year = last_date[:4]
+            month = last_date[4:6]
+            day = last_date[6:8]
 
             # Format the date and time for the 'date' command (YYYY-MM-DD HH:MM)
             cmd = f"date -s '{year}-{month}-{day} 00:01:01'"
