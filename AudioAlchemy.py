@@ -12,6 +12,8 @@ from logging.handlers import RotatingFileHandler
 import sys
 import random
 import time
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 import configfile as CONFIG
 import requests
 import subprocess
@@ -134,7 +136,8 @@ ALBUM_OF_THE_DAY_DATE = 0
 Matches the format of the Album of the day date. 
 This value is sent when the email goes out. 
 """
-ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = 0
+##Deprecated 2024-05-20 when we moved to the scheduler
+#ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = 0
 
 
 """
@@ -148,9 +151,9 @@ The flag that tells the app if it should send an email of the day.
 FLAG_AOTD_ENABLED = False
 
 """
-When set to true the first album of the day email will be sent today.
+When set to true the first album of the day email will be sent at application start.
 """
-FLAG_AOTD_SEND_TODAY = False
+FLAG_AOTD_SEND_NOW = False
 
 """
 Command line argument that tells the app to load the DB from the web.
@@ -164,11 +167,13 @@ PARAM_COMMAND_LINE_SEED_DAY = None
 
 ## This is the counter to see roughly how long has 
 ## past since the album of the day was sent
-COUNTER_FOR_ALBUM_OF_THE_DAY = 39995
+## Deprecated 2024-05-20 when scheduler was installed
+#COUNTER_FOR_ALBUM_OF_THE_DAY = 39995
 
 ## I want to check every hour so every 3600 seconds
 ## we'll check if it's time yet
-CHECK_ALBUM_OF_THE_DAY_COUNT_LIMIT = 36000
+## Deprecated 2024-05-20 when scheduler was installed
+#CHECK_ALBUM_OF_THE_DAY_COUNT_LIMIT = 36000
 
 """
 Tracks if the system date has been set. If it has, we don't try to set it
@@ -398,6 +403,34 @@ def update_aotd_cache(date, rfid, album_name):
         
 
 
+
+
+
+    
+def backup_cache(cache_file):
+    logging.debug('Starting backup_cache().')
+    logging.debug(f'Attempting to backup existing cache {cache_file}')
+    if os.path.exists(cache_file):
+        # Create a timestamp for the backup file name
+       
+        current_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
+        milliseconds = int((time.time() - int(time.time())) * 1000)
+
+        current_datetime_with_ms = f"{current_time}-{milliseconds:03d}"
+    
+        # Backup the existing file with a timestamp in the file name
+        backup_path = f'{cache_file}_backup_{current_datetime_with_ms}.csv'
+        os.rename(cache_file, backup_path)
+        logging.debug(f'Backed upexisting cache to {backup_path}')
+    else:
+        logging.debug(f'No cache file found at {cache_file} to backup. ')
+
+def is_rfid_codes_match(rfid1,rfid2):
+    
+    return str(rfid1) == str(rfid2)
+    
+
+
 def set_ststem_date():
     """ 
     Because the system is read only, every time you reboot the system thinks the date is 
@@ -411,14 +444,25 @@ def set_ststem_date():
     """
     global IS_SYSTEM_DATE_SET
     
-    ATTEMPTS_MADE = 0
-    
     if (IS_SYSTEM_DATE_SET == False):
         ## the idea here is to only do this if we haven't already 
         ## set the date and we haven't failed a lot already. 
         ##
         ## if it keeps failing we'll give up and log an error
 
+        if is_ntp_synced():
+            IS_SYSTEM_DATE_SET = True
+            logger.debug(f"The System clock is synchronized! ")
+        else:
+            ## NTP isn't synchronized so use the AOTD Date.
+            logger.warning(f"The NTP service is not synchronized. Using last AOTD Date.")
+            set_date_from_last_aotd()
+
+
+
+        '''
+        #This was the old way of doing it. Now that we have NTP working
+        # this is obsolete 2024-05-20  
         try:
             ATTEMPTS_MADE = ATTEMPTS_MADE +1
             logging.debug('Starting set_ststem_date()')
@@ -447,42 +491,29 @@ def set_ststem_date():
             logger.error(f"An exception occurred while trying to set the system date: {e}")
             stack_trace = traceback.format_exc()
             logger.error(f"{stack_trace}")
-            time.sleep(3)
-
-
-    if (IS_SYSTEM_DATE_SET == False ):
-        ## We couldn't get the actual date, so lets take our best guess
-        set_date_from_last_aotd()
-
-
+            time.sleep(3)'''
 
 
     
-def backup_cache(cache_file):
-    logging.debug('Starting backup_cache().')
-    logging.debug(f'Attempting to backup existing cache {cache_file}')
-    if os.path.exists(cache_file):
-        # Create a timestamp for the backup file name
-       
-        current_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime())
-        milliseconds = int((time.time() - int(time.time())) * 1000)
 
-        current_datetime_with_ms = f"{current_time}-{milliseconds:03d}"
-    
-        # Backup the existing file with a timestamp in the file name
-        backup_path = f'{cache_file}_backup_{current_datetime_with_ms}.csv'
-        os.rename(cache_file, backup_path)
-        logging.debug(f'Backed upexisting cache to {backup_path}')
-    else:
-        logging.debug(f'No cache file found at {cache_file} to backup. ')
+def is_ntp_synced():
+    try:
+        result = subprocess.run(['timedatectl', 'status'], capture_output=True, text=True, check=True)
+        if result is not None:
+            output = result.stdout
+            if ("NTP service: active" in output and "System clock synchronized: yes" in output):
+                ## The NTP service is synchronized
+                return True
+            else:
+                ## The NTP service is not synchronized
+                return False
+    except subprocess.CalledProcessError as e:
+        print(f"Error running timedatectl: {e}")
+        return False
 
-def is_rfid_codes_match(rfid1,rfid2):
-    
-    return str(rfid1) == str(rfid2)
-    
-    
 def set_date_from_last_aotd():
         
+
     if not DB_AOTD_CACHE.empty:
         try:
 
@@ -512,7 +543,7 @@ def set_date_from_last_aotd():
 
 
 def alchemy_app_runtime():
-    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, ALBUM_OF_THE_DAY_LAST_EMAIL_DATE, DB_AOTD_CACHE
+    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE
 
 
 
@@ -524,31 +555,29 @@ def alchemy_app_runtime():
 
 
     ## the read only OS thinks the date is June 2023 on reboot. In order for 
-    ## album of the day to work properly, you need to fitch the current date
+    ## album of the day to work properly, you need to fetch the current date
     ## and set the system time.
     set_ststem_date()
     
-    #try:
+
     # Load the database of RFID tags and their matching albums
     DB = load_database(FLAG_LOAD_DB_FROM_THE_WEB)
     
     
-
-
-
-
-    
-
-   
-    ## We set this at statup so that we don't send an email
-    ## every time the system restarts restart the system. Album of the day will instead 
+    ## Every time the system restarts restart the system. Album of the day will instead 
     ## be sent the day after the system is rebooted.
     set_album_of_the_day_date_and_rfid()
     
-    if FLAG_AOTD_SEND_TODAY == False:
-        ## only send the email of the today if the --email_today flag
-        ## was passed on the command line. Otherwise, send the first one tomorrow
-        ALBUM_OF_THE_DAY_LAST_EMAIL_DATE = ALBUM_OF_THE_DAY_DATE
+    scheduler = BackgroundScheduler()
+    if FLAG_AOTD_ENABLED == True:
+        ## We should schedule the sending of the album of the day.
+        logger.info("Scheduleing the AOTD for 4:20am.")
+        scheduler.add_job(schedule_handler_send_aotd, CronTrigger(hour=4, minute=20))
+        scheduler.start()
+
+    if FLAG_AOTD_SEND_NOW == True:
+       ## The command line args say send the email now
+       schedule_handler_send_aotd()
     
 
     # Set up the event handlers for the button controls
@@ -596,16 +625,30 @@ def alchemy_app_runtime():
     
 
     LAST_COMMAND_CARD = 0
+
+    
  
     logger.debug('Starting RFID Reader')
     print("Place a new tag on the reader.")
     
+
+    #TODO Refactor this so it's only doing work when it needs to.
+
+
     try:
         while APP_RUNNING:
             
+            time.sleep(LOOP_SLEEP_DURATION)
+
             ## read the RFID from the reader
             rfid_code = reader.read_id_no_block()
-        
+            #rfid_code = "881811828793"
+            #rfid_code = None
+
+            #if (rfid_code == None):
+            #    continue
+            #logger.debug("Got passed continiue")
+            
             ##logger.info(f'RFID Read: {rfid_code}')
             ## TAGS will only be read once     
             if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
@@ -717,39 +760,30 @@ def alchemy_app_runtime():
             ## This will tell the app to send an email once a day.
             ## all controlls for manaing when the email is sent
             ## are handled in the email_album_of_the_day() funciton
-            if not aaplayer.is_playing():
+            
+            ## 2024-05-20 Deprecated when we installed the email scheduler
+            #if not aaplayer.is_playing():
                 ## Only try emailing if the player 
                 ## isn't playing. We don't want anything messing up the music
-                check_album_of_the_day_email()
+            #    check_album_of_the_day_email()
             
         
-            time.sleep(LOOP_SLEEP_DURATION)
+            
         logger.debug('APP_RUNNING = False While Loop Completed. RFID Reader')
     except KeyboardInterrupt:
-       
-        # wait until the user hits exit
-        #message = input("Press enter to quit\n\n") # Run until someone presses enter
-    
-        #finally:
         logger.debug('Recieved CTRL-C - Shutting down')
-        print("Cleaning up...")
-        #rfidthread.stop
-        #musicplayerthread.stop
         APP_RUNNING = False
-        #rfidthread.join()
-        time.sleep(.3)
+        time.sleep(.5)
         
-    logger.debug('Shutting down buttons and RFID - GPIO.cleanup()')
-
-    #GPIO.cleanup() # Clean up
+    
     
     try:
-        logger.debug('Shutting down player - aaplayer.shutdown_player())')
-        
         aaplayer.shutdown_player()
+        scheduler.shutdown()
+        GPIO.cleanup()
+        
     finally:
-        print("Program complete.")
-        logger.debug('Program Complete.')
+        logger.debug('AudioAlchemy signing off.')
         sys.exit()
 
 
@@ -1063,7 +1097,7 @@ def my_interrupt_handler(channel):
     interrupt_time = int(round(time.time() * 1000))
     #interrupt_time = millis();
     ## If interrupts come faster than 200ms, assume it's a bounce and ignore
-    if (interrupt_time - LAST_BUTTON_TIME > 200):
+    if (interrupt_time - LAST_BUTTON_TIME > 500):
         LAST_BUTTON_TIME = interrupt_time
         return True
     else:
@@ -1457,33 +1491,7 @@ def set_album_of_the_day_date_and_rfid():
         # return false so they know there's not a new album of the day.
         return False
     else:
-        """
-        This was the old logic before we started using the album of the day cache
         
-        # Set the seed with today's date so we always get the same answer
-        np.random.seed(todays_seed)
-    
-        ## don't use rows with a 1 in the 
-        filtered_df = DB[DB['exclude_from_random'] != 1]
-    
-        ## get a pile of results so at least one of them doesn't get excluded
-        sample_size = min(len(filtered_df), 50)
-    
-        todays_rfid_list = filtered_df.sample(n=sample_size, random_state=todays_seed)['rfid'].tolist()
-    
-
-        #found_rfid = None  # This will store the found rfid value
-
-
-        #check throgh the list of RFIDs for one that is approved
-        for rfid in todays_rfid_list:
-            if rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
-                continue
-            else:
-                ALBUM_OF_THE_DAY_RFID = rfid  # Store the rfid that passed the check
-                ALBUM_OF_THE_DAY_DATE = todays_seed # store the current album of the day date/seed
-                return True
-         """
         rfid = get_album_of_the_day_rfid(todays_seed)
         
         logger.debug(f'Album of the day RFID is: {rfid}...')
@@ -1770,8 +1778,26 @@ def get_assigned_aotd_for_today(date_to_check):
     return None
     
 
+def schedule_handler_send_aotd():
+    """
+    This function makes sure everything is in good shape before sending the album of the day.
+    """
+    # make sure we really know the time.  
+    set_ststem_date() 
+    if not IS_SYSTEM_DATE_SET:
+        logger.error(f"Skipping AOTD email because the system time hasn't been set.")
+        return
 
-def check_album_of_the_day_email():
+    #make sure the album of the day is up to date.
+    set_album_of_the_day_date_and_rfid()
+
+    #send the email with the album of the day.
+    send_album_of_the_day_email(ALBUM_OF_THE_DAY_RFID)
+
+   
+
+### Deprecated 2024-05-20. This was replaced with the scheduler. send_aotd_schedule_handler
+'''def check_album_of_the_day_email():
     """
     This function determines if it's time to send the album of the day email.
     If it is, and it hasn't been sent yet, it calls the function to send
@@ -1825,17 +1851,18 @@ def check_album_of_the_day_email():
                 logger.info(f'New Album of the day available. BUT its not 4am yet. Current hour{hour}')
                 COUNTER_FOR_ALBUM_OF_THE_DAY = 0
         
-       
+### Deprecated 2024-05-20. This was replaced with the scheduler. send_aotd_schedule_handler       
 def is_past_send_time():
     # Get the current hour
     current_hour = datetime.now().hour
     
     # Check if current hour is past 5 AM
     return current_hour >= 3
-
+'''
 
 def send_album_of_the_day_email(rfid):    
     
+
     logger.info(f'Sending an album of the day email...')
     
     
@@ -1917,8 +1944,10 @@ def send_album_of_the_day_email(rfid):
             smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
             smtp.send_message(msg)
             logger.info(f'Email sent successfully!')
+            return True
     except Exception as e:
         print(f"Error occurred: {e}")
+        return False
 
 
 def play_random_albums():
@@ -2076,13 +2105,14 @@ def speak_current_track():
     
     try:
         current_track_for_email = aaplayer.get_current_track()
-    
+        logger.debug(f'Processing track {current_track_for_email}.')
+
         # Split by directory delimiter
         parts = current_track_for_email.split('/')
 
         # Assign album and track to separate variables
-        album_name = parts[4]
-        track_name_with_extension = parts[5]
+        album_name = parts[-2]
+        track_name_with_extension = parts[-1]
 
         # Use regex to extract the disk and track number if formatted as 'disk-track'
         match = re.match(r'(\d+)-(\d+)', track_name_with_extension)
@@ -2182,8 +2212,8 @@ def validate_seed(value):
         raise argparse.ArgumentTypeError("seed must be in 8-digit format")
     return value
 
-def main(email_flag_set, date_seed, email_today_set, webdb_set, debug_set):
-    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_TODAY, FLAG_LOAD_DB_FROM_THE_WEB, logger
+def main(email_flag_set, date_seed, email_now, webdb_set, debug_set):
+    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_NOW, FLAG_LOAD_DB_FROM_THE_WEB, logger
     
     
     logger = start_logger(debug_set)
@@ -2195,9 +2225,9 @@ def main(email_flag_set, date_seed, email_today_set, webdb_set, debug_set):
         print("AOTD Email Disabled")
         
         
-    if email_today_set:
+    if email_now:
         print("Email will be sent today if --aotd_enabled passed")
-        FLAG_AOTD_SEND_TODAY = True
+        FLAG_AOTD_SEND_NOW = True
     else:
         print("First AOTD email will be sent tomorrow.")
         
@@ -2225,15 +2255,18 @@ def main(email_flag_set, date_seed, email_today_set, webdb_set, debug_set):
         logger.error(f"An exception occurred: {e}")
         stack_trace = traceback.format_exc()
         logger.error(f"{stack_trace}")
+    finally:
+        GPIO.cleanup()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process some command line parameters and flags.')
 
-    # Add the email flag
-    parser.add_argument('--aotd_enabled', action='store_true', help='Set this flag if you want to activate the AOTD email.')
+    # Determines if an AOTD will be scheduled to be sent.
+    parser.add_argument('--aotd_scheduled', action='store_true', help='Set this flag if you want to activate the AOTD email.')
     
-    # Add the email flag
-    parser.add_argument('--email_today', action='store_true', help='Set this flag if you want to send an email today.')
+
+    # Determines if the AUTD will be sent as soon as the application starts. 
+    parser.add_argument('--aotd_send_now', action='store_true', help='Set this flag if you want to send an email at program start. Does not require --aotd-enabled')
 
     # Add the seed parameter with validation but make it optional
     parser.add_argument('--seed', type=validate_seed, help='A seed value in 8-digit format.')
@@ -2245,5 +2278,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args.aotd_enabled, args.seed, args.email_today, args.webdb, args.debug)
+    main(args.aotd_scheduled, args.seed, args.aotd_send_now, args.webdb, args.debug)
 
