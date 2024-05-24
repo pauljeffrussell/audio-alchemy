@@ -220,6 +220,10 @@ def start_logger(debug_set):
     logger = logging.getLogger()
     logger.setLevel(log_out_level)
 
+    # Suppress logging from apscheduler by setting its log level higher
+    logging.getLogger('apscheduler').setLevel(logging.WARNING)
+
+
     # Create a formatter
     formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
     # Create a stream handler to log to STDOUT
@@ -460,13 +464,21 @@ def set_ststem_date():
         ## set the date and we haven't failed a lot already. 
         ##
         ## if it keeps failing we'll give up and log an error
+        ATTEMPTS_MADE = 0
 
-        if is_ntp_synced():
+        ## It seems to take 15 seconds before this ever works. 
+        time.sleep(15)
+        while (ATTEMPTS_MADE < 3 and not is_ntp_synced()):
+            ATTEMPTS_MADE = ATTEMPTS_MADE +1
+            time.sleep(5)
+            logger.info(f"RETRY: The system clock is NOT synchronized! Trying Again... ")
+        
+        if (ATTEMPTS_MADE == 0 or is_ntp_synced()):
             IS_SYSTEM_DATE_SET = True
-            logger.debug(f"The System clock is synchronized! ")
+            logger.info(f"SUCCESS: The System clock is synchronized! ")
         else:
             ## NTP isn't synchronized so use the AOTD Date.
-            logger.warning(f"The NTP service is not synchronized. Using last AOTD Date.")
+            logger.warning(f"BUMMER: The NTP service is not synchronized. Using last AOTD Date.")
             set_date_from_last_aotd()
 
 
@@ -519,7 +531,7 @@ def is_ntp_synced():
                 ## The NTP service is not synchronized
                 return False
     except subprocess.CalledProcessError as e:
-        print(f"Error running timedatectl: {e}")
+        logger.error(f"Error running timedatectl: {e}")
         return False
 
 def set_date_from_last_aotd():
@@ -600,6 +612,7 @@ def signal_handler(sig, frame):
 def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE, AOTD_SCHEDULER
 
+    logger.info("Starting AlchemyAlchemy...")
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -848,7 +861,7 @@ def app_shutdown():
         aaplayer.shutdown_player()
         AOTD_SCHEDULER.shutdown()
         GPIO.cleanup()
-        logger.debug('AudioAlchemy signing off.')
+        logger.info('Shutting down AudioAlchemy.')
     finally:
         sys.exit(0)
 
