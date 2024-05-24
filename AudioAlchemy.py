@@ -6,7 +6,7 @@ import pl7 as aaplayer
 import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library  
 from gpiozero import Button
 from mfrc522 import SimpleMFRC522
-#import threading
+import threading
 import logging
 from logging.handlers import RotatingFileHandler
 import sys
@@ -30,6 +30,7 @@ import re
 import traceback
 import aareporter
 from gtts import gTTS
+import signal
 
 
 
@@ -55,6 +56,16 @@ DB = pd.DataFrame()
 DB_AOTD_CACHE = pd.DataFrame()
 
 APP_RUNNING = True
+
+LAST_ALBUM_CARD = 0
+
+LAST_COMMAND_CARD = 0
+
+COUNT_SINCE_CARD_REMOVED = 0
+
+SLEEP_DURATION_MAIN_LOOP = 0.1
+
+SLEEP_DURATION_RFID_READ_LOOP = 0.3
 
 ## This is the fiel I use to cache the DB so I don't 
 ## have to get it from the web every time.
@@ -197,7 +208,7 @@ def start_logger(debug_set):
     global logger
     
     file_location=CONFIG.LOG_FILE_LOCATION 
-    log_out_level=logging.WARNING
+    log_out_level=logging.INFO
     
     if debug_set == True:
         log_out_level=logging.DEBUG
@@ -220,10 +231,10 @@ def start_logger(debug_set):
 
 
     # Create a rotating file handler to log to a file
-    formatterForLogFile = logging.Formatter('%(asctime)s %(message)s -- %(funcName)s %(lineno)d')
+    formatterForLogFile = logging.Formatter('%(levelname)s %(asctime)s %(message)s -- %(funcName)s %(lineno)d')
     file_handler = RotatingFileHandler(file_location, maxBytes=1024*1024, backupCount=5)
     #file_handler = RotatingFileHandler("./logs/error.log", maxBytes=1024*1024, backupCount=5)
-    file_handler.setLevel(logging.ERROR)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(formatterForLogFile)
     logger.addHandler(file_handler)
     
@@ -272,7 +283,7 @@ def load_database(LOAD_FROM_WEB):
             
             logging.debug("Attempting to load the DB from the internet.")
             db_url = f'https://docs.google.com/spreadsheets/d/{DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet={DB_SHEET_NAME}'
-            logger.info(f'DB URL: {db_url}s')
+            logger.debug(f'DB URL: {db_url}s')
             # Read the spreadsheet
         
             #logger.debug('This is the response for the URL.')
@@ -540,11 +551,57 @@ def set_date_from_last_aotd():
         logger.error(f"Unable to set temp system date from AOTD Cache. {e}") 
         
     
+def rfid_reader_thread(callback):
+    """
+    RFID reader thread function that continuously reads RFID tags and calls a callback function with the RFID code.
 
+    Args:
+        callback (function): A function to be called with the RFID code whenever a tag is detected.
+
+    This function initializes an instance of the SimpleMFRC522 reader, starts an infinite loop to read RFID tags,
+    and calls the provided callback function with the RFID code. If an exception occurs, it logs the error and performs GPIO cleanup.
+    """
+    reader = SimpleMFRC522()
+    try:
+        logger.debug("Starting RFID Reader Thread.")
+        while APP_RUNNING:
+            rfid_code = reader.read_id_no_block()
+            callback(rfid_code)
+            time.sleep(SLEEP_DURATION_RFID_READ_LOOP)
+    except Exception as e:
+        logger.error(f"Error in RFID thread loop. {e}")
+    finally:
+        GPIO.cleanup()
+        logger.debug(f"Exiting RFID thread loop.")
+
+
+def start_rfid_thread():
+    """
+    Starts a new thread that runs the RFID reader function.
+
+    Returns:
+        threading.Thread: The thread object that is running the RFID reader function.
+
+    This function creates and starts a daemon thread that runs the `rfid_reader_thread` function with `handle_tag_detected` as its argument.
+    The thread is set as a daemon so it will not prevent the program from exiting.
+    """
+    thread = threading.Thread(target=rfid_reader_thread, args=(handle_tag_detected,))
+    thread.daemon = True
+    thread.start()
+    return thread
+
+def signal_handler(sig, frame):
+    """
+    Signal handler for graceful shutdown.
+    """
+    logger.info("Received signal to terminate. Shutting down...")
+    app_shutdown()
 
 def alchemy_app_runtime():
-    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE
+    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE, AOTD_SCHEDULER
 
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
 
     ## Load the album of the day cache.
@@ -568,12 +625,12 @@ def alchemy_app_runtime():
     ## be sent the day after the system is rebooted.
     set_album_of_the_day_date_and_rfid()
     
-    scheduler = BackgroundScheduler()
+    AOTD_SCHEDULER = BackgroundScheduler()
     if FLAG_AOTD_ENABLED == True:
         ## We should schedule the sending of the album of the day.
-        logger.info("Scheduleing the AOTD for 4:20am.")
-        scheduler.add_job(schedule_handler_send_aotd, CronTrigger(hour=4, minute=20))
-        scheduler.start()
+        logger.debug("Scheduleing the AOTD for 4:20am.")
+        AOTD_SCHEDULER.add_job(schedule_handler_send_aotd, CronTrigger(hour=4, minute=20))
+        AOTD_SCHEDULER.start()
 
     if FLAG_AOTD_SEND_NOW == True:
        ## The command line args say send the email now
@@ -592,11 +649,13 @@ def alchemy_app_runtime():
     aaplayer.startup()
     
 
-    reader = SimpleMFRC522()
+    start_rfid_thread()
+    #2024-05-24 replaced with a thread 
+    #reader = SimpleMFRC522()
     
-    ## The RFID the app thinks is current. This is reset to 0 if the 
+    '''## The RFID the app thinks is current. This is reset to 0 if the 
     ## Reader doesn't see this card for some period. After it has stopped playing. 
-    CURRRENT_RFID = 0
+    #CURRRENT_RFID = 0
     
     
     ## sometimes we get a command code and we want to remember the previous
@@ -606,30 +665,30 @@ def alchemy_app_runtime():
     
     ## A counter of the number of times the loop below happened
     ## when there was no card and the player wasn't playing
-    COUNT_SINCE_CARD_REMOVED = 0
+    #COUNT_SINCE_CARD_REMOVED = 0
     
     
     ## We track command cards differently than we count other cards. 
-    COUNT_SINCE_COMMAND_CARD_REMOVED = 0
+    #COUNT_SINCE_COMMAND_CARD_REMOVED = 0
     
-    LOOP_SLEEP_DURATION = .2
+ 
     
     
     ## The COUNT_SINCE_CARD_REMOVED is incremented every time the loop below
     ## doesn't find a card while the player isn't playing
     ##
-    ## so LOOP_SLEEP_DURATION * NO_CARD_THREASHOLD is how long a card has to be 
+    ## so SLEEP_DURATION_MAIN_LOOP * NO_CARD_THREASHOLD is how long a card has to be 
     ## off the player when it's not playing for the player to treat it like a 
     ##  new card when you put it back on.
-    NO_CARD_THREASHOLD = 10
+    #NO_CARD_THREASHOLD = 10
     
 
-    LAST_COMMAND_CARD = 0
+    #LAST_COMMAND_CARD = 0'''
 
     
- 
-    logger.debug('Starting RFID Reader')
-    print("Place a new tag on the reader.")
+    #2024-05-24 replaced with a thread 
+    #logger.debug('Starting RFID Reader')
+    #print("Place a new tag on the reader.")
     
 
     #TODO Refactor this so it's only doing work when it needs to.
@@ -638,14 +697,20 @@ def alchemy_app_runtime():
     try:
         while APP_RUNNING:
             
-            time.sleep(LOOP_SLEEP_DURATION)
+            time.sleep(SLEEP_DURATION_MAIN_LOOP)
+            aaplayer.keep_playing()
 
+            '''
+            2024-05-24 replaced this with a thread.
             ## read the RFID from the reader
             rfid_code = reader.read_id_no_block()
-            #rfid_code = "881811828793"
-            #rfid_code = None
+            
 
-            #if (rfid_code == None):
+            handle_tag_detected(rfid_code)
+            '''
+
+
+            '''#if (rfid_code == None):
             #    continue
             #logger.debug("Got passed continiue")
             
@@ -710,7 +775,7 @@ def alchemy_app_runtime():
                 ## that we can still see it.
                 ##
                 ## We reset the counter so that the card really has to be off the 
-                ## devide for a duration of at least LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
+                ## devide for a duration of at least SLEEP_DURATION_MAIN_LOOP * COUNT_SINCE_CARD_REMOVED
                 COUNT_SINCE_CARD_REMOVED = 0
                 LAST_COMMAND_CARD = 0
                 
@@ -721,7 +786,7 @@ def alchemy_app_runtime():
                 
                 if COUNT_SINCE_CARD_REMOVED >= NO_CARD_THREASHOLD:
                     ## the card has been off the player for at least
-                    ## LOOP_SLEEP_DURATION * COUNT_SINCE_CARD_REMOVED
+                    ## SLEEP_DURATION_MAIN_LOOP * COUNT_SINCE_CARD_REMOVED
                     ##
                     ## So we need to tell the app it's no longer the current
                     ## card so it will be treated as new the next time it is seen 
@@ -740,13 +805,7 @@ def alchemy_app_runtime():
                     ## invalidate any command card that was on here before
                     LAST_COMMAND_CARD = 0
 
-
-            ## TODO You can put logic right to enable the email current track logic to work. 
-            ## you'd need to have cached the current album and then compare it to the one that's playing after
-            ## this is called.
-            ##
-            ## however, you can also just pause the player for 3 seconds with the cards off and then you'll be able to 
-            ## use the email card again without an issue.
+            
             
             ## I switched the logic to just reset the command card if its off the player for 1 second, 
             ## so there's no longer a need to check if the track actually changed. Thus there used to be
@@ -766,28 +825,32 @@ def alchemy_app_runtime():
                 ## Only try emailing if the player 
                 ## isn't playing. We don't want anything messing up the music
             #    check_album_of_the_day_email()
-            
+            '''
         
             
-        logger.debug('APP_RUNNING = False While Loop Completed. RFID Reader')
+        logger.debug('Exiting Main Application Loop. APP_RUNNING = False.')
     except KeyboardInterrupt:
-        logger.debug('Recieved CTRL-C - Shutting down')
-        APP_RUNNING = False
-        time.sleep(.5)
+        logger.debug('Recieved KeyboardInterrupt - Shutting down')
         
     
+    app_shutdown()
     
+
+
+def app_shutdown():
+    global APP_RUNNING 
+
+    APP_RUNNING = False
+    time.sleep(.5)
+
     try:
+        logger.debug('Starting shutdown.')
         aaplayer.shutdown_player()
-        scheduler.shutdown()
+        AOTD_SCHEDULER.shutdown()
         GPIO.cleanup()
-        
-    finally:
         logger.debug('AudioAlchemy signing off.')
-        sys.exit()
-
-
-
+    finally:
+        sys.exit(0)
 
 """
 #################################################################################
@@ -796,8 +859,72 @@ def alchemy_app_runtime():
 
 #################################################################################"""
 
+def handle_tag_detected(rfid):
+    global LAST_ALBUM_CARD, LAST_COMMAND_CARD, COUNT_SINCE_CARD_REMOVED
+
+    #logger.debug(f"\n\nrfid: {rfid}.")
+    #logger.debug(f"LAST_ALBUM_CARD: {LAST_ALBUM_CARD}.")
+    #logger.debug(f"LAST_COMMAND_CARD: {LAST_COMMAND_CARD}.")
+    #logger.debug(f"COUNT_SINCE_CARD_REMOVED: {COUNT_SINCE_CARD_REMOVED}.")
+
+    if (rfid == LAST_ALBUM_CARD):
+        #logger.debug("Matched last album card.")
+        ## The RFID reader won't successfully read every time, so this counter will go up
+        ## We reset it back to zero every time we get a matched read.
+        COUNT_SINCE_CARD_REMOVED = 0
+        return
+    
+    if (rfid == LAST_COMMAND_CARD):
+        #logger.debug("Matched last command card.")
+        ## The RFID reader won't successfully read every time, so this counter will go up
+        ## We reset it back to zero every time we get a matched read.
+        COUNT_SINCE_CARD_REMOVED = 0
+        return
+    
+    ## This is where we check and see if the card has stopped seeing a card.
+    ## The rule is, album cards can be removed and placed back any time without 
+    ## changing app behavior according to the rules in this function.
+    if (rfid == None):
+        #logger.debug("RFID == None")
+        ## A card was read and then nothing was read.
+        COUNT_SINCE_CARD_REMOVED += 1
+
+        if (COUNT_SINCE_CARD_REMOVED > 10):
+
+            ## only execute this if the last album hasn't been cleared AND the music isn't playing.
+            ## this alows us to pick up the album card and look at it as long as we want
+            ## as long as the music is playing.
+            if (LAST_ALBUM_CARD != 0 and not aaplayer.is_playing()):
+                ## if no card is read for x times and the player is stopped, 
+                ## remove this card from the last list so it can be tapped again.
+                LAST_ALBUM_CARD = 0
+
+            #command cards are only good for
+            LAST_COMMAND_CARD = 0
+            COUNT_SINCE_CARD_REMOVED = 0
+        
+        return
+            
+
+    if (command_card_handler(rfid) == True):
+        ## you found a command card
+        COUNT_SINCE_CARD_REMOVED = 0
+        LAST_COMMAND_CARD = rfid
+        logger.debug(f'Completed command card: {rfid}...')
+
+    elif(music_card_handler(rfid) == True):
+        # you found a music card!
+        COUNT_SINCE_CARD_REMOVED = 0
+        LAST_ALBUM_CARD = rfid
+        logger.debug(f'Completed music card: {rfid}...')
+    else:
+        ## you don't know this card. Treat it like a command card 
+        ## so you don't keep reading it over and over.
+        COUNT_SINCE_CARD_REMOVED = 0
+        LAST_COMMAND_CARD = rfid
 
 
+## 2024-05-20 deprecated in when I implemted the new handle_tag_detected
 def handle_rfid_read(rfid_code):
     global DB
     
@@ -934,6 +1061,7 @@ def music_card_handler(rfid_code):
         
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
         aareporter.log_card_tap(CONFIG.CARD_TYPE_GENRE, name, genre + "::" + sub_genre, rfid_code)
+        return True
     
     elif (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')):
         #this card is a label card. It is intended to play all of the albums with a matching lable.
@@ -950,6 +1078,7 @@ def music_card_handler(rfid_code):
         
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
         aareporter.log_card_tap(CONFIG.CARD_TYPE_LABEL, name, label, rfid_code)
+        return True
     
     else:
         ## it must be an album card or no card at all
@@ -974,15 +1103,15 @@ def music_card_handler(rfid_code):
         
             name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
             aareporter.log_card_tap(CONFIG.CARD_TYPE_ALBUM, name, album_folder_name, rfid_code)
-        
+            return True
         
         else:
             ## after all that you didn't find a card.
             aaplayer.play_feedback(CONFIG.FEEDBACK_RFID_NOT_FOUND)
-            logger.warning(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
+            logger.debug(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
             name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
             aareporter.log_card_tap(CONFIG.CARD_TYPE_CARD_UNKNOWN, "Unknown", "Unknown", rfid_code)
-            
+            return False
             
 
 def start_button_controls():
@@ -1018,7 +1147,7 @@ def button_callback_16(channel):
     # make sure to debounce partial button pushes AND
     # skip this button release if the last button push was held down. 
     if (my_interrupt_handler(channel) and not last_button_held()):
-        logger.info("Previous Track Button was pushed!")
+        logger.debug("Previous Track Button was pushed!")
         aaplayer.prev_track()
 
 
@@ -1027,7 +1156,7 @@ def button_callback_15(channel):
     # make sure to debounce partial button pushes AND
     # skip this button release if the last button push was held down.
     if (my_interrupt_handler(channel) and not last_button_held()):
-        logger.info("Play/Pause Button was pushed!")
+        logger.debug("Play/Pause Button was pushed!")
         aaplayer.play_pause_track()
 
     
@@ -1036,21 +1165,21 @@ def button_callback_13(channel):
     # make sure to debounce partial button pushes AND
     # skip this button release if the last button push was held down.
     if (my_interrupt_handler(channel) and not last_button_held()):
-        logger.info("Next Track Button was pushed!")
+        logger.debug("Next Track Button was pushed!")
         aaplayer.next_track()
         
         
 def button_forward_held_callback(channel):
     global LAST_BUTTON_HELD
     LAST_BUTTON_HELD = True
-    logger.info("SKIP TO NEXT ALBUM!")
+    logger.debug("SKIP TO NEXT ALBUM!")
     aaplayer.jump_to_next_album()
  
     
 def button_backward_held_callback(channel):
     global LAST_BUTTON_HELD
     LAST_BUTTON_HELD = True
-    logger.info("SKIP TO PREVIOUS ALBUM!")
+    logger.indebugfo("SKIP TO PREVIOUS ALBUM!")
     aaplayer.jump_to_previous_album()
  
     
@@ -1059,11 +1188,11 @@ def button_shuffle_current_songs(channel):
     LAST_BUTTON_HELD = True
     
     if CURRENT_ALBUM_SHUFFLED == False:
-        logger.info("Suffle Current tracks!")
+        logger.debug("Suffle Current tracks!")
         aaplayer.shuffle_current_songs()
         CURRENT_ALBUM_SHUFFLED = True
     else:
-        logger.info("Unshuffle current tracks!")
+        logger.debug("Unshuffle current tracks!")
         aaplayer.unshuffle_current_songs()
         CURRENT_ALBUM_SHUFFLED = False
     
@@ -1146,7 +1275,7 @@ def lookup_field_by_field(df, search_column, search_term, result_column):
         return result_value
     else:
         #didn't find that RFID in the sheet
-        logger.warning(f'The value {search_term} was not found in the column {search_column}.')
+        logger.debug(f'The value {search_term} was not found in the column {search_column}.')
         return 0
           
         
@@ -1393,7 +1522,7 @@ def get_tracks(folders, shuffle_tracks):
            
             if (last_directory.startswith("label:") or last_directory.startswith("genre:")):
                 ## We should ignore this one
-                logger.info(f"Skipping folder {folder} because it's a label or genre db row.")
+                logger.debug(f"Skipping folder {folder} because it's a label or genre db row.")
             else:
                 ## It's not a label or genre card so it should have a folder
                 ## If it doesn't exist, log the error so it's known. 
@@ -1602,13 +1731,13 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
         
         # Get all the albums that aren't excluded dfrom the album of the day list
         potential_albums = DB[DB['exclude_from_random'] != 1]
-        logger.info("Got the list of potential albums.")
+        logger.debug("Got the list of potential albums.")
         
       
     # figure out how many possible albums there are. You need this to make sure you don't 
     # remove too many albums using the AOTD cache.    
     potential_size = len(potential_albums)
-    logger.info(f'Potential Album Count: {potential_size}')
+    logger.debug(f'Potential Album Count: {potential_size}')
         
     ## get the album of the day cache limited to the AOTD_REPEAT_LIMIT * the lenght of the available tracks.
     try:
@@ -1863,7 +1992,7 @@ def is_past_send_time():
 def send_album_of_the_day_email(rfid):    
     
 
-    logger.info(f'Sending an album of the day email...')
+    logger.debug(f'Sending an album of the day email...')
     
     
     album_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Album'))
@@ -1943,7 +2072,7 @@ def send_album_of_the_day_email(rfid):
             smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
             smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
             smtp.send_message(msg)
-            logger.info(f'Email sent successfully!')
+            logger.debug(f'Email sent successfully!')
             return True
     except Exception as e:
         print(f"Error occurred: {e}")
@@ -2090,7 +2219,7 @@ def send_email_with_current_track(current_track_for_email):
             smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
             smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
             smtp.send_message(msg)
-            logger.info(f'Email sent successfully!')
+            logger.debug(f'Email sent successfully!')
     except Exception as e:
         print(f"Error occurred: {e}")
 

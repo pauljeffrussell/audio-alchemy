@@ -373,13 +373,13 @@ def unpause_track():
     global MUSIC_PAUSED
     MUSIC_PAUSED = 0
     pygame.mixer.music.unpause()
-    logger.info('Unpaused album.')
+    logger.debug('Unpaused album.')
 
 def pause_track():
     global MUSIC_PAUSED
     MUSIC_PAUSED = 1
     pygame.mixer.music.pause()
-    logger.info('Paused album.')
+    logger.debug('Paused album.')
     save_position()
     
 
@@ -413,14 +413,14 @@ def play_current_track(check_remember=False):
         if (check_remember and S_REMEMBER_POSITION):
             current_index = S_LAST_TRACK 
             current_track = TRACK_LIST[current_index]
-            logger.info(f'Starting: {current_track}')
+            logger.debug(f'Starting: {current_track}')
             pygame.mixer.music.load(current_track)
             pygame.mixer.music.rewind()
             position = S_LAST_POSITION/1000
             pygame.mixer.music.play(start=position)
         else:
             current_track = TRACK_LIST[current_index]
-            logger.info(f'Starting: {current_track}')
+            logger.debug(f'Starting: {current_track}')
             pygame.mixer.music.load(current_track)
             pygame.mixer.music.play() 
             
@@ -505,7 +505,7 @@ def next_track(button_press=True):
             # pause_track()
             MUSIC_STOPPED = 1
             MUSIC_PAUSED = 1
-            logger.info(f'Reached end of album. Press play to restart album.')
+            logger.debug(f'Reached end of album. Press play to restart album.')
         elif (S_ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
             ## The album reached it's end and should now restart
 
@@ -517,9 +517,9 @@ def next_track(button_press=True):
                 COUNT_REPEATS = COUNT_REPEATS + 1
                 play_current_track()
                 MUSIC_STOPPED = 0
-                logger.info(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
+                logger.debug(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
             else:
-                logger.info(f'Completed max allowed repeats of album. Player stopped automatically.')
+                logger.debug(f'Completed max allowed repeats of album. Player stopped automatically.')
             
         else:
             # Load and play the next track

@@ -129,7 +129,7 @@ def write_to_gsheet(sheet_name, row_data):
             logger.error(f'Failed to log to {sheet_name} due to an API error: {e}')
         """        
     except Exception as e:
-        logger.error(f"While logging to {sheet_name}.\nData not written:{row_data}.\n\nAn unexpected error occurred: {e}")    
+        logger.error(f"While logging to {sheet_name}. Data not written:{row_data}. Error: {e}")    
 
 
 
