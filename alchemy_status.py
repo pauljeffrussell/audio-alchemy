@@ -217,12 +217,12 @@ if __name__ == "__main__":
         
     
 
+    percent_full, space_remaining = get_disk_usage('/mnt/audioalchemy')
+    color = GREEN if percent_full < 85 else RED
+    output(f"\nLibrary: {color}{percent_full}% full{NC}  {GREY}{space_remaining}B available{NC}")
 
-    used_memory_percentage, available_memory = get_memory_usage()
-    available_memory = available_memory / 1024
-    color = GREEN if used_memory_percentage < 30.0 else RED
-    output(f"\nMemory Usage: {color}{used_memory_percentage:.1f}%{NC}  {GREY}{available_memory:.2}GB free{NC}")
 
+    
     ##########################################
     ###             CPU
     ##########################################    
@@ -253,9 +253,12 @@ if __name__ == "__main__":
     color = RED if temp > 47 else GREEN
     output(f"\nTemp: {color}{temp}{NC}")
 
-    percent_full, space_remaining = get_disk_usage('/mnt/audioalchemy')
-    color = GREEN if percent_full < 85 else RED
-    output(f"\nLibrary: {color}{percent_full}% full{NC}  {GREY}{space_remaining}B available{NC}")
+    used_memory_percentage, available_memory = get_memory_usage()
+    available_memory = available_memory / 1024
+    color = GREEN if used_memory_percentage < 30.0 else RED
+    output(f"\nMemory Usage: {color}{used_memory_percentage:.1f}%{NC}  {GREY}{available_memory:.2}GB free{NC}")
+
+
 
     aotd_file = '/mnt/audioalchemy/dbcache/aotdcache.csv'
     formatted_date, third_value = get_aotd(aotd_file)

@@ -19,6 +19,8 @@ AOTD = 'AOTD'
 
 logger = None
 
+__SHEET_LOGER_ENABLED = False
+
 
 # Use creds to create a client to interact with the Google Drive API
 scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
@@ -30,6 +32,11 @@ client = None
 spreadsheet = None
 #sheet_card = spreadsheet.worksheet("card_taps")
 
+
+
+def enable_sheet_logger():
+    global __SHEET_LOGER_ENABLED
+    __SHEET_LOGER_ENABLED = True
 
 """
 Adds a row to the card_tap table found at
@@ -98,6 +105,9 @@ def log_aotd(folder, rfid):
 
 def write_to_gsheet(sheet_name, row_data):
     global client, spreadsheet
+
+    if not __SHEET_LOGER_ENABLED:
+        return
     
     try:
         
