@@ -2,7 +2,8 @@ import os
 from urllib.parse import urlparse, parse_qs
 from yt_dlp import YoutubeDL
 import pandas as pd
-import pl7 as aaplayer
+#import pl7 as aaplayer
+import AlchemyPlayer as aaplayer
 import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library  
 from gpiozero import Button
 from mfrc522 import SimpleMFRC522
@@ -192,6 +193,11 @@ again because we have what we need and every new attempt can only
 make things the same or worse.
 """
 IS_SYSTEM_DATE_SET = False
+
+"""
+When set to True, card taps and track plays will be recorded to an external Google sheet.
+"""
+ENABLE_REPORT_TO_WEB = False
 
 """
 This is the global logger. It gets set when the application starts. 
@@ -467,15 +473,16 @@ def set_ststem_date():
         ATTEMPTS_MADE = 0
 
         ## It seems to take 15 seconds before this ever works. 
-        time.sleep(15)
-        while (ATTEMPTS_MADE < 3 and not is_ntp_synced()):
+        if (not is_ntp_synced()):
+            time.sleep(15)
+        while (ATTEMPTS_MADE < 2 and not is_ntp_synced()):
             ATTEMPTS_MADE = ATTEMPTS_MADE +1
             time.sleep(5)
             logger.info(f"RETRY: The system clock is NOT synchronized! Trying Again... ")
         
         if (ATTEMPTS_MADE == 0 or is_ntp_synced()):
             IS_SYSTEM_DATE_SET = True
-            logger.info(f"SUCCESS: The System clock is synchronized! ")
+            logger.debug(f"SUCCESS: The System clock is synchronized! ")
         else:
             ## NTP isn't synchronized so use the AOTD Date.
             logger.warning(f"BUMMER: The NTP service is not synchronized. Using last AOTD Date.")
@@ -657,188 +664,31 @@ def alchemy_app_runtime():
     #set the logger for the music player
     aaplayer.set_logger(logger)
     aareporter.set_logger(logger)
+    if (ENABLE_REPORT_TO_WEB):
+        logger.debug('Web reporting is enabled.')
+        aareporter.enable_sheet_logger()
+    else:
+        logger.debug('Web reporting is disabled. Nothing will be logged to the reporting google sheet.')
+        
 
+    logger.debug('Starting AlchemyPlayer.')
     #set up the music player
     aaplayer.startup()
     
+    logger.debug('Loaded AlchemyPlayer.')
 
+    ## start reading from the RFID reader
     start_rfid_thread()
-    #2024-05-24 replaced with a thread 
-    #reader = SimpleMFRC522()
-    
-    '''## The RFID the app thinks is current. This is reset to 0 if the 
-    ## Reader doesn't see this card for some period. After it has stopped playing. 
-    #CURRRENT_RFID = 0
-    
-    
-    ## sometimes we get a command code and we want to remember the previous
-    ## rfid so if we put that card back, it doesn't restart that album
-    ## because it thinks that the current card is the command card
-    #PREVIOUS_RFID = 0
-    
-    ## A counter of the number of times the loop below happened
-    ## when there was no card and the player wasn't playing
-    #COUNT_SINCE_CARD_REMOVED = 0
-    
-    
-    ## We track command cards differently than we count other cards. 
-    #COUNT_SINCE_COMMAND_CARD_REMOVED = 0
-    
- 
-    
-    
-    ## The COUNT_SINCE_CARD_REMOVED is incremented every time the loop below
-    ## doesn't find a card while the player isn't playing
-    ##
-    ## so SLEEP_DURATION_MAIN_LOOP * NO_CARD_THREASHOLD is how long a card has to be 
-    ## off the player when it's not playing for the player to treat it like a 
-    ##  new card when you put it back on.
-    #NO_CARD_THREASHOLD = 10
     
 
-    #LAST_COMMAND_CARD = 0'''
-
     
-    #2024-05-24 replaced with a thread 
-    #logger.debug('Starting RFID Reader')
-    #print("Place a new tag on the reader.")
-    
-
-    #TODO Refactor this so it's only doing work when it needs to.
-
 
     try:
         while APP_RUNNING:
-            
-            time.sleep(SLEEP_DURATION_MAIN_LOOP)
-            aaplayer.keep_playing()
+            logger.debug('Main Loop Refresh.')
+            time.sleep(60*60)
+            #aaplayer.keep_playing()
 
-            '''
-            2024-05-24 replaced this with a thread.
-            ## read the RFID from the reader
-            rfid_code = reader.read_id_no_block()
-            
-
-            handle_tag_detected(rfid_code)
-            '''
-
-
-            '''#if (rfid_code == None):
-            #    continue
-            #logger.debug("Got passed continiue")
-            
-            ##logger.info(f'RFID Read: {rfid_code}')
-            ## TAGS will only be read once     
-            if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
-                is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) or \
-                is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_PAUSE_PLAYER) ):
-                ## you just read a command card that needs to work while an album is playing.
-                
-                if ( rfid_code != LAST_COMMAND_CARD ):
-                    ## you read a command code you haven't seen reciently.
-                    logger.debug(f'RFID Read: {rfid_code}')
-                    LAST_COMMAND_CARD = rfid_code
-                    handle_rfid_read(rfid_code)      
-                
-                ## Lets set the timeout counter for this command card to 0 so we 
-                ## restart counting when the card is removed. 
-                COUNT_SINCE_COMMAND_CARD_REMOVED = 0
-                              
-            
-            elif (rfid_code != CURRRENT_RFID and rfid_code != None):  
-                ## you just read a new card!!!
-                """if (is_rfid_codes_match(rfid_code, CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
-                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
-                    logger.debug("Backing up playing RFID")
-                    ## lets save the current RFID since this is a command card 
-                    ## that acts on the currently playing album
-                    PREVIOUS_RFID = CURRRENT_RFID 
-                else:
-                    PREVIOUS_RFID = 0
-                    logger.debug("Not the command code you're looking for.")"""
-                                      
-                ## record this as the last rfid read            
-                CURRRENT_RFID = rfid_code
-                logger.info(f'RFID Read: {rfid_code}')
-                
-                
-                ## deal with the card            
-                handle_rfid_read(rfid_code)
-
-
-                ##reset the card removed counter so we don't invalidate this card
-                COUNT_SINCE_CARD_REMOVED = 0
-                
-                ## now reset the last command card in case one was just before putting this card on.
-                LAST_COMMAND_CARD = 0
-                
-                
-                """if (is_rfid_codes_match(rfid_code,CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK) or \
-                    is_rfid_codes_match(rfid_code, CONFIG.COMMAND_EMAIL_CURRENT_TRACK_NAME) ):
-                    logger.debug("Restoring playing RFID")
-                    ## put the previously playing album rfid back so that the user 
-                    ## can put the album card back on without restarting the album
-                    CURRRENT_RFID = PREVIOUS_RFID
-                    ## Now pause so that you don't re-read the card again. 
-                 """   #time.sleep(1.5)   
-                
-            elif (rfid_code == CURRRENT_RFID):
-                ## You've already read this card but just in case there was a blip
-                ## where the reader missed it for a second, lets remind the app
-                ## that we can still see it.
-                ##
-                ## We reset the counter so that the card really has to be off the 
-                ## devide for a duration of at least SLEEP_DURATION_MAIN_LOOP * COUNT_SINCE_CARD_REMOVED
-                COUNT_SINCE_CARD_REMOVED = 0
-                LAST_COMMAND_CARD = 0
-                
-            elif (CURRRENT_RFID !=0 and rfid_code == None and not aaplayer.is_playing()):
-                ## The card has been removed from the reader and
-                ## the player is not playing
-                COUNT_SINCE_CARD_REMOVED = COUNT_SINCE_CARD_REMOVED +1
-                
-                if COUNT_SINCE_CARD_REMOVED >= NO_CARD_THREASHOLD:
-                    ## the card has been off the player for at least
-                    ## SLEEP_DURATION_MAIN_LOOP * COUNT_SINCE_CARD_REMOVED
-                    ##
-                    ## So we need to tell the app it's no longer the current
-                    ## card so it will be treated as new the next time it is seen 
-                    CURRRENT_RFID = 0
-                    
-                    ## invalidate any command card that was on here before
-                    LAST_COMMAND_CARD = 0
-                    
-            elif (LAST_COMMAND_CARD !=0 and rfid_code == None):
-                ## there's no card. Something might be playing and something might not be playing, but
-                ## either way there's no card so let's time out any command cards that  
-                COUNT_SINCE_COMMAND_CARD_REMOVED = COUNT_SINCE_COMMAND_CARD_REMOVED +1
-                
-                ## enough time has passed without a command card. we can invalidate it now.
-                if COUNT_SINCE_COMMAND_CARD_REMOVED >= NO_CARD_THREASHOLD:
-                    ## invalidate any command card that was on here before
-                    LAST_COMMAND_CARD = 0
-
-            
-            
-            ## I switched the logic to just reset the command card if its off the player for 1 second, 
-            ## so there's no longer a need to check if the track actually changed. Thus there used to be
-            ## an if check here, but I removed it. 
-            aaplayer.keep_playing()
-                ## you got a new track
-            #    LAST_COMMAND_CARD = 0
-            
-            
-            
-            ## This will tell the app to send an email once a day.
-            ## all controlls for manaing when the email is sent
-            ## are handled in the email_album_of_the_day() funciton
-            
-            ## 2024-05-20 Deprecated when we installed the email scheduler
-            #if not aaplayer.is_playing():
-                ## Only try emailing if the player 
-                ## isn't playing. We don't want anything messing up the music
-            #    check_album_of_the_day_email()
-            '''
         
             
         logger.debug('Exiting Main Application Loop. APP_RUNNING = False.')
@@ -938,7 +788,7 @@ def handle_tag_detected(rfid):
 
 
 ## 2024-05-20 deprecated in when I implemted the new handle_tag_detected
-def handle_rfid_read(rfid_code):
+'''def handle_rfid_read(rfid_code):
     global DB
     
     
@@ -954,7 +804,7 @@ def handle_rfid_read(rfid_code):
     else:
         ## this must be a music card.
         music_card_handler(rfid_code)
-        
+ '''       
 
 def command_card_handler(rfid_code):
     """
@@ -1134,10 +984,6 @@ def start_button_controls():
     button13 = Button("BOARD13")
 
 
-    #button16.when_pressed = button_callback_16
-    #button15.when_pressed = button_callback_15
-    #button13.when_pressed = button_callback_13
-
 
     ## Previous button
     button16.when_released = button_callback_16
@@ -1192,7 +1038,7 @@ def button_forward_held_callback(channel):
 def button_backward_held_callback(channel):
     global LAST_BUTTON_HELD
     LAST_BUTTON_HELD = True
-    logger.indebugfo("SKIP TO PREVIOUS ALBUM!")
+    logger.debug("SKIP TO PREVIOUS ALBUM!")
     aaplayer.jump_to_previous_album()
  
     
@@ -1575,22 +1421,6 @@ def play_album_of_the_day():
     ## so the album of the day behaves the same as all other music.
     music_card_handler(ALBUM_OF_THE_DAY_RFID)
 
-    """ Commented out 2023-09-04 and replaced with the above music_card_handler(ALBUM_OF_THE_DAY_RFID) line
-    
-    album_folder_name = lookup_field_by_field(DB, 'rfid', ALBUM_OF_THE_DAY_RFID, 'folder')
-    logger.debug(f'Attemptting to load album: {album_folder_name}...')
-    album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
-
-    
-    tracks = get_tracks([album_folder], False)
-    if (len(tracks) > 0):
-        foo = 3
-        logger.debug (f'Album has tracks. Playing...')
-        aaplayer.play_tracks(tracks, False )
-    else:
-        logger.warning (f'No tracks found for folder {album_folder}.')
-
-    return tracks"""
     
 
 def set_album_of_the_day_date_and_rfid():
@@ -2102,14 +1932,6 @@ def play_random_albums():
     album_rfid_list = []
     
     
-    """while len(album_rfid_list) <= CONFIG.RANDOM_ALBUMS_TO_PLAY -1:
-        ## get another album
-        rfid = get_random_rfid_value()
-        labels = lookup_field_by_field(DB, 'rfid', rfid, 'labels')
-        if 'random' in labels and rfid not in album_rfid_list:
-            album_rfid_list.append(rfid)
-        else:
-            print("Found a non random album.")"""
     
     ## replaced the above code to skip albums labled norandom instead of 
     ## requiring the albums be labled with "random"
@@ -2354,8 +2176,8 @@ def validate_seed(value):
         raise argparse.ArgumentTypeError("seed must be in 8-digit format")
     return value
 
-def main(email_flag_set, date_seed, email_now, webdb_set, debug_set):
-    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_NOW, FLAG_LOAD_DB_FROM_THE_WEB, logger
+def main(email_flag_set, date_seed, email_now, webdb_set, debug_set, web_report):
+    global FLAG_AOTD_ENABLED, PARAM_COMMAND_LINE_SEED_DAY, FLAG_AOTD_SEND_NOW, FLAG_LOAD_DB_FROM_THE_WEB, logger, ENABLE_REPORT_TO_WEB
     
     
     logger = start_logger(debug_set)
@@ -2379,6 +2201,12 @@ def main(email_flag_set, date_seed, email_now, webdb_set, debug_set):
         FLAG_LOAD_DB_FROM_THE_WEB = True
     else:
         print("The DB will be loaded from cache if possible.")
+
+
+    if web_report:
+        ENABLE_REPORT_TO_WEB = True
+    else:
+       ENABLE_REPORT_TO_WEB = False 
             
     if date_seed != None:
         print(f'Using provided date seed {date_seed}')
@@ -2418,7 +2246,10 @@ if __name__ == "__main__":
     
     parser.add_argument('--debug', action='store_true', help='Tells the application to run in debug mode.')
 
+    parser.add_argument('--web_report', action='store_true', help='Tells the application to save to the Web google reporting sheet.')
+
+
     args = parser.parse_args()
 
-    main(args.aotd_scheduled, args.seed, args.aotd_send_now, args.webdb, args.debug)
+    main(args.aotd_scheduled, args.seed, args.aotd_send_now, args.webdb, args.debug, args.web_report)
 
