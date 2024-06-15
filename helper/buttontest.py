@@ -5,7 +5,7 @@ LAST_BUTTON_TIME = 0;
 
 def my_interrupt_handler(channel):
     global LAST_BUTTON_TIME    
-    
+    return True
     interrupt_time = int(round(time.time() * 1000))
     #interrupt_time = millis();
     ## If interrupts come faster than 200ms, assume it's a bounce and ignore
@@ -41,9 +41,9 @@ def start_button_controls():
     GPIO.setup(15, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
     GPIO.setup(13, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Set pin 10 to be an input pin and set initial value to be pulled low (off)
 
-    GPIO.add_event_detect(16,GPIO.FALLING,callback=button_callback_16, bouncetime=200) # Setup event on pin 10 rising edge
-    GPIO.add_event_detect(15,GPIO.FALLING,callback=button_callback_15, bouncetime=200) # Setup event on pin 10 rising edge
-    GPIO.add_event_detect(13,GPIO.FALLING,callback=button_callback_13, bouncetime=200) # Setup event on pin 10 rising edge
+    GPIO.add_event_detect(16,GPIO.FALLING,callback=button_callback_16, bouncetime=50) # Setup event on pin 10 rising edge
+    GPIO.add_event_detect(15,GPIO.FALLING,callback=button_callback_15, bouncetime=50) # Setup event on pin 10 rising edge
+    GPIO.add_event_detect(13,GPIO.FALLING,callback=button_callback_13, bouncetime=50) # Setup event on pin 10 rising edge
     
 
 

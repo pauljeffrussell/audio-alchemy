@@ -1,8 +1,12 @@
 covers/*
+cards/*
+__TEST_GAPLESS/*
+html/*
 dbcache/*
 test/*
 cred/*
 library/*
+library-tbd/*
 webm/*
 ytm/*
 logs/*
@@ -18,3 +22,4 @@ os/*
 _manifest/*
 dbcache/*
 manual_audio/*
+mobile/*
