@@ -510,7 +510,7 @@ def play_pause_track():
     elif (MUSIC_PAUSED == True):
         _unpause_track()
     else:
-        _pause_track()
+        pause_track()
         
 
 @PLAYBACK_MANAGER.lock_decorator
@@ -522,7 +522,7 @@ def _unpause_track():
     logger.debug('Unpaused album.')
 
 @PLAYBACK_MANAGER.lock_decorator
-def _pause_track():
+def pause_track():
     global MUSIC_PAUSED
     MUSIC_PAUSED = True
     pygame.mixer.music.pause()
@@ -551,10 +551,11 @@ def _save_position(restart_album):
 
     if S_REMEMBER_POSITION:
         
+        ## get the position in seconds
+        position = pygame.mixer.music.get_pos() / 1000
+        
         if (current_index == S_LAST_TRACK):
-            position = pygame.mixer.music.get_pos() + S_LAST_POSITION
-        else:
-            position = pygame.mixer.music.get_pos()
+            position = position + S_LAST_POSITION
             
             
         if (position > 10):
@@ -581,7 +582,7 @@ def _play_current_track(check_remember=False):
             logger.debug(f'Starting: {current_track}')
             pygame.mixer.music.load(current_track)
             pygame.mixer.music.rewind()
-            position = S_LAST_POSITION/1000
+            position = S_LAST_POSITION
             pygame.mixer.music.play(start=position)
             ## make sure we've got a thread going to play the next track
             PLAYBACK_MANAGER.start()
@@ -632,9 +633,7 @@ def _jump_to_track(track_index):
   
     ## Set this so it starts playing when we hit the next button if it wasn't already playing
     MUSIC_PAUSED = False
-    # Stop the mixer
-    #pygame.mixer.music.stop()
-    #PLAYBACK_MANAGER.stop()
+
     
     # Get the next index
     current_index = track_index
@@ -772,7 +771,7 @@ def play_speech(speech_file):
         
 def report_track(current_track):
     global PREVIOUS_FOLDER, S_SONG_SHUFFLE
-    return
+    
     folder, file_name = get_folder_and_file(current_track)
     logger.debug(f'folder: {folder}')
     logger.debug(f'file: {file_name}')
@@ -813,7 +812,7 @@ def shutdown_player():
     #time.sleep(3)
     
     
-    _pause_track()
+    pause_track()
     pygame.mixer.music.stop()
     pygame.quit()
     logger.debug('Completed Player Shutdown')

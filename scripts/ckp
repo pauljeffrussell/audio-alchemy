@@ -33,10 +33,7 @@ CURRENT_SECONDS=$(date +%s)
 
 DAYS_DIFFERENCE=$(((CURRENT_SECONDS - TIMESTAMP_SECONDS) / (24*60*60)))
 SECS_DIFFERENCE=$((CURRENT_SECONDS - TIMESTAMP_SECONDS))
-#echo -e "DAYS ${DAYS_DIFFERENCE}"
-#echo -e "SECS ${SECS_DIFFERENCE}"
-#echo -e "CURRENT    ${CURRENT_SECONDS}"
-#echo -e "TIMESTAMP  ${TIMESTAMP_SECONDS}"
+
 
 
 # Calculate the difference in seconds
@@ -46,39 +43,6 @@ DIFF_SECONDS=$((TIMESTAMP2 - TIMESTAMP1))
 DIFF_DAYS=$(echo "scale=1; $SECS_DIFFERENCE / 86400" | bc)
 
 
-
-
-: <<'END_COMMENT'
-uptime_output=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
-#echo "uptime_output $uptime_output"
-if [ $LINE_COUNT -ge 2 ]; then
-if [[ $uptime_output == *-* ]]; then
-    days=$(echo "$uptime_output" | awk -F- '{print $1}')
-    hours=$(echo "$uptime_output" | awk -F: '{print $1}' | awk -F- '{print $2}')
-    minutes=$(echo "$uptime_output" | awk -F: '{print $2}')
-    seconds=$(echo "$uptime_output" | awk -F: '{print $3}')
-    #uptime_formatted_output="${days} day, ${hours} hours, ${minutes} minutes, ${seconds} seconds"
-    #uptime_formatted_output="${days} day ${hours} hours ${minutes} minutes ${seconds} seconds"
-
-    # Decide whether to use "day" or "days"
-    if [ "$days" -eq 1 ]; then
-      day_word="day"
-    else
-      day_word="days"
-    fi
-
-
-
-    uptime_formatted_output="${days}${day_word} ${hours}hr ${minutes}min ${seconds}sec"
-else
-    hours=$(echo "$uptime_output" | awk -F: '{print $1}')
-    minutes=$(echo "$uptime_output" | awk -F: '{print $2}')
-    seconds=$(echo "$uptime_output" | awk -F: '{print $3}')
-    uptime_formatted_output="${hours} hours, ${minutes} minutes, ${seconds} seconds"
-fi
-fi
-echo "$uptime_formatted_output"
-END_COMMENT
 
 
 uptime_output=$(ps -p $PID -o etime= | awk '{$1=$1; print}')
@@ -125,20 +89,10 @@ if [ $LINE_COUNT -ge 2 ]; then
     fi
 fi
 
-#echo "$uptime_formatted_output"
-
-
 
 # Check if the argument '-f' is provided
 if [ "$1" == "-f" ]; then
-    #echo -e "\n\n\n"
-    #echo "##########################################"
-    #echo "##                                      ##"
-    #echo "##           Process Info               ##"
-    #echo "##                                      ##"
-    #echo "##########################################"
-    #echo
-    #echo "$RESULT"
+   
     echo -e "\n\n\n"
     echo "##########################################"
     echo "##                                      ##"
@@ -157,8 +111,6 @@ echo
 echo
 if [ $LINE_COUNT -ge 2 ]; then
     echo -e "Alchemy status: ${GREEN}ON${NC}  ${GREY}$uptime_formatted_output${NC}"
-
-    #echo -e "Uptime: \e[1;32m$uptime_formatted_output\e[0m"
 
 else
     echo -e "Alchemy is \e[1;31mOFF\e[0m"
@@ -259,10 +211,6 @@ fi
 
 echo
 
-#echo -e "Library: ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
-
-#echo
-
 
 DIR="../test/library"
 
@@ -270,7 +218,7 @@ if [[ -r "$DIR" ]]; then
     # Try to list the contents of the directory to verify it's actually readable
     ls "$DIR" > /dev/null 2>&1
     if [[ $? -eq 0 ]]; then
-        echo -e "Library: ${GREEN}Connected${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
+        echo -e "Library: ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
     else
         echo -e "Library: ${RED}Drive not readable or has I/O error${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
     fi
@@ -278,11 +226,6 @@ else
     echo -e "Library: ${RED}Drive not mounted${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
 fi
 
-#if [[ -r "$DIR" ]]; then
-#    echo -e "Library: ${GREEN}Connected${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
-#else
-#    echo -e "Library: ${RED}Drive not mounted${NC}  ${color}${PERCENT_FULL}% full${NC}  ${GREY}${SPACE_REMAINING} available${NC}"
-#fi
 
 echo
 
@@ -294,9 +237,6 @@ line=$(tail -n 1 /media/audioalchemy/dbcache/aotdcache.csv)
 formatted_date=$(echo "$line" | awk -F, '{ printf "%s-%s-%s", substr($1,1,4), substr($1,5,2), substr($1,7,2) }')
 third_value=$(echo "$line" | awk -F, '{ print $3 }')
 
-# Get today's date in YYYY-MM-DD format
-#today=$(date +"%Y-%m-%d"
-
 
 # Fetch the date string from worldtimeapi for the America/New_York time zone
 response=$(curl -s http://worldtimeapi.org/api/timezone/America/New_York)
@@ -307,21 +247,6 @@ datetime_str=${datetime_str%%\"*}
 
 # Extract date from datetime string
 today=${datetime_str%%T*}
-
-#today="2023-09-25"
-
-#echo -e "Today ${today}"
-
-
-# Parse the JSON response to extract the datetime
-#datetime=$(echo $json_response | jq -r '.datetime')
-
-# Format the datetime to YYYY-MM-DD
-#today=$(date -d"$datetime" +"%Y-%m-%d")
-
-
-
-
 
 # Compare the dates and print in red if they do not match, otherwise print normally
 if [ "$formatted_date" != "$today" ]; then
