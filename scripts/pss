@@ -1,2 +1,4 @@
-ps aux | grep audioalchemy
+#!/bin/bash
+
+ps aux | grep AudioAlchemy.py
 
