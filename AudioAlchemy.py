@@ -24,8 +24,10 @@ from datetime import datetime, timedelta
 import calendar
 import smtplib
 from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
 from email.header import Header
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 import argparse
 import re
 import traceback
@@ -64,7 +66,7 @@ LAST_COMMAND_CARD = 0
 
 COUNT_SINCE_CARD_REMOVED = 0
 
-SLEEP_DURATION_MAIN_LOOP = 0.1
+SLEEP_DURATION_MAIN_LOOP = 60*60
 
 SLEEP_DURATION_RFID_READ_LOOP = 0.3
 
@@ -650,12 +652,25 @@ def alchemy_app_runtime():
         ## We should schedule the sending of the album of the day.
         logger.debug("Scheduleing the AOTD for 4:20am.")
         AOTD_SCHEDULER.add_job(schedule_handler_send_aotd, CronTrigger(hour=4, minute=20))
-        AOTD_SCHEDULER.start()
+        
+    logger.debug("Scheduleing error log email for 4:25am.")
+    AOTD_SCHEDULER.add_job(schedule_handler_send_receint_errors, CronTrigger(hour=4, minute=25))
 
-    if FLAG_AOTD_SEND_NOW == True:
-       ## The command line args say send the email now
-       schedule_handler_send_aotd()
+    AOTD_SCHEDULER.start()
+
+    #def send_logs_home():    
     
+
+    if FLAG_AOTD_SEND_NOW == True and PARAM_COMMAND_LINE_SEED_DAY != None:
+        ## The command line args say send the email now
+
+        logger.debug(f'Looking up album for today: {PARAM_COMMAND_LINE_SEED_DAY}...')
+        
+        rfid = get_aotd_rfid_for_date(PARAM_COMMAND_LINE_SEED_DAY)
+        send_album_of_the_day_email(rfid)
+    elif(FLAG_AOTD_SEND_NOW == True ):
+        schedule_handler_send_aotd()
+        
 
     # Set up the event handlers for the button controls
     start_button_controls()
@@ -686,8 +701,10 @@ def alchemy_app_runtime():
     try:
         while APP_RUNNING:
             logger.debug('Main Loop Refresh.')
-            time.sleep(60*60)
-            #aaplayer.keep_playing()
+            aareporter.log_system_metrics()
+            #aareporter.send_logs_home()
+            time.sleep(SLEEP_DURATION_MAIN_LOOP)
+            
 
         
             
@@ -838,7 +855,13 @@ def command_card_handler(rfid_code):
         logger.debug('Executing Command Card Stop Player & Reload Database')
         
         ## stop the music so it seems like an update is happening
+        
         aaplayer.pause_track()
+
+        ## we do this because we don't want the current card remembered 
+        ## after the DB load. Otherwise you expect it to start playing and it doesn't
+        LAST_ALBUM_CARD = None
+        
         
         ## start playing the processing feedback sound
         aaplayer.play_feedback(CONFIG.COMMAND_STOP_AND_RELOAD_DB_FEEDBACK)
@@ -848,17 +871,20 @@ def command_card_handler(rfid_code):
         DB = load_database(True)
         logger.debug('DB loaded from web.')
         
-        logger.debug('Waiting for 2.5 seconds for audio to complete.')
-        ## wait for 2.5 seconds so the feedback audio can complete
-        time.sleep(2.5)
-        
+        '''# removed this on 2024-05-26  as it didnt appear to do anything
+        # reset the player. I'm not sure why this is here. It probably served a purpose a long time ago
         logger.debug('Restaring the player.')
-        ## reset the player. I'm not sure why this is here. It probably served a purpose a long time ago
         aaplayer.shutdown_player()
         aaplayer.startup()
-        logger.debug('Restaring complete.')
+        logger.debug('Restaring complete.')'''
+
+
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Reload Database", "COMMAND_STOP_AND_RELOAD_DB", rfid_code)    
         CURRENT_ALBUM_SHUFFLED = False
+        
+        logger.debug('Waiting for 2.5 seconds for audio to complete.')
+        time.sleep(2.5)
+        
         return True
     elif (command_code == CONFIG.COMMAND_SHUT_DOWN_APP ):
         logger.debug('Read RFID to shutdown application')
@@ -1767,6 +1793,12 @@ def schedule_handler_send_aotd():
     send_album_of_the_day_email(ALBUM_OF_THE_DAY_RFID)
 
    
+def schedule_handler_send_receint_errors():
+     
+    if not IS_SYSTEM_DATE_SET:
+        logger.error(f"Skipping sending logs home due to time system time not being synchronized.")
+        return
+    aareporter.send_logs_home()
 
 ### Deprecated 2024-05-20. This was replaced with the scheduler. send_aotd_schedule_handler
 '''def check_album_of_the_day_email():
@@ -1832,7 +1864,7 @@ def is_past_send_time():
     return current_hour >= 3
 '''
 
-def send_album_of_the_day_email(rfid):    
+'''def send_album_of_the_day_email(rfid):    
     
 
     logger.debug(f'Sending an album of the day email...')
@@ -1919,7 +1951,128 @@ def send_album_of_the_day_email(rfid):
             return True
     except Exception as e:
         print(f"Error occurred: {e}")
-        return False
+        return False'''
+
+def find_card_png(directory):
+    """
+    Searches a directory for the first .png file and returns its name.
+    If no .png file is found, returns None.
+    
+    Args:
+        directory (str): The path of the directory to search.
+        
+    Returns:
+        str or None: The name of the first .png file found, or None if no .png file is found.
+    """
+    if not os.path.isdir(directory):
+        return None
+
+    for filename in os.listdir(directory):
+        if filename.endswith('.png'):
+            return directory + '/' + filename
+    return None
+
+def send_album_of_the_day_email(rfid):
+    logger.debug(f'Sending an album of the day email...')
+
+    album_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Album'))
+    album_folder_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'folder'))
+    artist_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Artist'))
+    album_url = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'url'))
+    subject = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'aotd_greeting'))
+    loaded_hq = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'loaded_hq'))
+    
+    album_card_image = find_card_png(LIBRARY_CACHE_FOLDER + album_folder_name)
+    if album_card_image:
+        logger.debug(f"The first .png file found is: {album_card_image}")
+    else:
+        logger.debug(f'No .png files found in {LIBRARY_CACHE_FOLDER + album_folder_name}.')
+        album_card_image = None
+
+    
+
+    if (subject == BLANK):
+        subject = album_name
+        #Add this in if you're testing 
+        #subject = subject + datetime.now().strftime('%H%M%S')
+
+
+    body = f"""<div style="font-size: .8em;">Today's album of the day is:</div><br>"""
+    
+    if album_url != "":
+        body = body + f'<a href="{album_url}">'
+    
+    body = body + f"""<b style="font-size: 1.6em;">{album_name}</b>"""
+
+    if (artist_name != "" and artist_name != "Various Artists"):
+        body = body + "<BR>"
+
+        body = body + '<div style="font-size: 1em; padding-top:.5em;padding-left: 2.5em;">'
+        body = body + "by "  + artist_name + "</div>"
+        
+    if album_url != "":
+        body = body + f'</a>'
+
+    # Check if the image file exists
+    if (album_card_image):
+        body = body + f"""<br>
+        <img src="cid:image1" alt="album card" style="width:90%; max-width:600px; height:auto;">"""
+
+    body = body + f"""</b>
+    <BR><BR><BR><BR>
+    <BR><BR><BR><BR>
+    <BR><BR><BR><BR>
+    <BR><BR><BR><BR>
+    """
+    
+    if loaded_hq == "y":
+        body = body + f"""
+        <div style="font-size: smaller; color: grey;">Best recording quality uploaded. Use the hammer to play the album.</div> 
+        <BR><BR><BR><BR>       
+        """
+    else:
+        body = body + f"""
+        <div style="font-size: smaller; color: grey;">Uploaded album quality is <b>meh</b>. Use the hammer to play the album.</div>  
+        <BR><BR><BR><BR>      
+        """
+    
+    # Email settings
+    SMTP_SERVER = 'smtp.gmail.com'
+    SMTP_PORT = 587
+    SENDER_EMAIL = CONFIG.EMAIL_SENDER_ADDRESS  # Change this to your Gmail
+    SENDER_PASSWORD = CONFIG.EMAIL_SENDER_PASSWORD  # Change this to your password or App Password
+
+    msg = MIMEMultipart('related')
+    msg['Subject'] = subject
+    msg['From'] = CONFIG.EMAIL_SENDER_NAME
+    msg['To'] = CONFIG.EMAIL_SEND_TO  # The receiver's email
+
+    # Attach the HTML body to the email
+    msg.attach(MIMEText(body, 'html'))
+
+    # Open the image file and attach it to the email if it exists
+    if (album_card_image):
+        with open(album_card_image, 'rb') as img:
+            mime_image = MIMEImage(img.read())
+            # Set Content-ID for referencing the image in HTML
+            mime_image.add_header('Content-ID',  '<image1>')
+            #mime_image.add_header('Content-ID', f'<image1>; filename="{album_card_image}"')
+            # Remove Content-Disposition header (not needed for inline images)
+            mime_image.add_header('Content-Disposition', f'inline; filename="Card"')
+            msg.attach(mime_image)
+    
+
+
+
+    try:
+        # Send the email
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
+            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+            smtp.send_message(msg)
+            logger.info(f'Email sent successfully!')
+    except Exception as e:
+        print(f"Error occurred: {e}")
 
 
 def play_random_albums():
@@ -1988,6 +2141,21 @@ def check_aotd_cache_for_today(date_to_check):
         logger.debug("Found album of the day in the cache.")
         return DB_AOTD_CACHE['rfid'].iloc[-1]
     else:
+        return None
+
+
+def get_aotd_rfid_for_date(date_str):
+    # Filter the DataFrame to find the row with the matching date
+    result = DB_AOTD_CACHE[DB_AOTD_CACHE['date'] == date_str]
+    
+    logger.debug(f"Looking up AOTD RFID for {date_str}.")
+
+    # Check if a matching date was found
+    if not result.empty:
+        logger.debug(f"Found RFID {result['rfid'].values[0]}.")
+        return result['rfid'].values[0]
+    else:
+        logger.debug(f"No RFID Found in AOTD Cache.")
         return None
 
     

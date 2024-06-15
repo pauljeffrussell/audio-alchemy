@@ -5,6 +5,11 @@ import gspread
 import logging
 import requests
 import sys
+import subprocess
+from email.message import EmailMessage
+from email.header import Header
+from email.mime.text import MIMEText
+import smtplib
 from oauth2client.service_account import ServiceAccountCredentials
 
 """
@@ -101,6 +106,189 @@ def log_aotd(folder, rfid):
     write_to_gsheet("aotd",row_data)
     #spreadsheet.worksheet("aotd").append_row(row_data)
 
+
+def log_system_metrics():
+
+    ## Get the temperature
+    temp_output = subprocess.run(['vcgencmd', 'measure_temp'], stdout=subprocess.PIPE).stdout.decode()
+    temperature = float(temp_output.split('=')[1].split("'")[0])
+    
+
+    # Calculate five-minute utilization per core
+    num_cores = os.cpu_count()
+    cpu_load_avg = os.getloadavg()   
+    #get the 15 minute average
+    average_cpu_util = (cpu_load_avg[2] / num_cores) * 100
+
+
+    
+    row_data = [
+        get_time(),
+        temperature,
+        average_cpu_util
+    ]
+    write_to_gsheet("system_metrics",row_data)
+
+
+
+'''def get_past_day_error_logs():
+# Get the current time
+    now = datetime.datetime.now()
+    # Calculate the time for 24 hours ago
+    one_day_ago = now - datetime.timedelta(days=1.1)
+    
+    # Read the log file lines
+    with open(CONFIG.LOG_FILE_LOCATION , 'r') as file:
+        lines = file.readlines()
+    
+    # Identify the starting point to check entries
+    start_index = len(lines)
+    entry_found = False
+    
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i]
+        #if line.startswith("INFO") or line.startswith("ERROR"):
+        if line.startswith("INFO") or line.startswith("ERROR"):
+            parts = line.split(' ', 2)
+            timestamp_str = f"{parts[1]} {parts[2].split(',')[0]}"
+            entry_time = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+            
+            if entry_time <= one_day_ago:
+                start_index = i + 1
+                entry_found = True
+                break
+    
+    # If no entries found, print nothing to report
+    if not entry_found:
+        return None
+    
+    # List to hold entries from the last day
+    recent_entries = []
+    current_entry = []
+    
+    # Collect entries from the start index
+    for line in lines[start_index:]:
+        if line.startswith("INFO") or line.startswith("ERROR"):
+            if current_entry:
+                recent_entries.append("".join(current_entry))
+                current_entry = []
+        current_entry.append(line)
+    
+    # Add the last entry
+    if current_entry:
+        recent_entries.append("".join(current_entry))
+    
+    output = ''
+    # Print the recent entries if found
+    if recent_entries:
+        for entry in recent_entries:
+            output += entry
+    else:
+        return None
+    
+    return output'''
+
+
+def get_past_day_error_logs():
+# Get the current time
+    now = datetime.datetime.now()
+    # Calculate the time for 24 hours ago
+    one_day_ago = now - datetime.timedelta(days=1.1)
+    
+    # Read the log file lines
+    with open(CONFIG.LOG_FILE_LOCATION , 'r') as file:
+        lines = file.readlines()
+    
+    # Initialize variables
+    last_error_index = None
+    last_in_range_index = None
+
+    # Process lines in reverse to find the most recent "ERROR" line within the last 24 hours
+    for i in range(len(lines) - 1, -1, -1):
+        line = lines[i].strip()
+        if line.startswith("INFO") or line.startswith("ERROR"):
+            parts = line.split(' ', 2)
+            timestamp_str = f"{parts[1]} {parts[2].split(',')[0]}"
+            entry_time = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+            
+            if entry_time > one_day_ago:
+                last_in_range_index = i
+                if line.startswith("ERROR"):
+                    last_error_index = i
+            else:
+                break
+
+    # if there's an error, collect relevant entries from the last last day 
+    output = ''
+
+    relevant_entries = []
+    if last_error_index is not None:
+        for i in range(last_in_range_index, len(lines)):
+            output += lines[i]
+
+    else:
+        output = None
+
+    return output
+
+def send_logs_home():    
+    
+    logger.debug(f'Checking if there are logs to send...')
+    
+    log_output = get_past_day_error_logs()
+
+    send_from_name = "Alchemy Errors"
+
+    ## send an email saying you didn't find anything if you didn't find anything.
+    if (log_output == None):
+        logger.debug(f'No error logs to send home today...')
+        send_email(CONFIG.EMAIL_SEND_TO_FOR_INFO_MESSAGES, send_from_name, "Alchemy is Error Free!!!", '<pre>No errors found for the last 24 hours. Noice!</pre>' )
+        return  
+   
+    logger.debug(f'Error Logs available. Sending email...')
+
+    # Calculate yesterday's date
+    yesterday = datetime.datetime.now() - datetime.timedelta(days=1)
+    # Format the date as "YYYY-MM-DD"
+    formatted_date = yesterday.strftime("%Y-%m-%d")
+
+    subject = f"Errors from {formatted_date}" 
+    
+    body = '<pre>' + log_output +'</pre>'
+
+    send_email(CONFIG.EMAIL_SEND_TO_FOR_INFO_MESSAGES, send_from_name, subject, body )
+    
+
+def send_email(send_to, send_from_name, subject, body):
+    # Email settings
+    SMTP_SERVER = 'smtp.gmail.com'
+    SMTP_PORT = 587
+    SENDER_EMAIL = CONFIG.EMAIL_SENDER_ADDRESS  # Change this to your Gmail
+    SENDER_PASSWORD = CONFIG.EMAIL_SENDER_PASSWORD      # Change this to your password or App Password
+
+    # Create the message
+    msg = EmailMessage()
+    
+    
+    msg = MIMEText(body, 'html') 
+              
+    msg['Subject'] = subject
+    msg['From'] = send_from_name
+    msg['To'] = send_to # The receiver's email
+
+
+
+    # Send the email
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()  # Upgrade the connection to secure encrypted SSL/TLS connection
+            smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
+            smtp.send_message(msg)
+            logger.debug(f'Email sent successfully!')
+            return True
+    except Exception as e:
+        logger.error(f"Error sending email. {e}")
+        return False
 
 
 def write_to_gsheet(sheet_name, row_data):
