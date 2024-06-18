@@ -1,4 +1,6 @@
 import os
+import time
+import random
 import datetime
 import configfile as CONFIG
 import gspread
@@ -291,7 +293,7 @@ def send_email(send_to, send_from_name, subject, body):
         return False
 
 
-def write_to_gsheet(sheet_name, row_data):
+'''def write_to_gsheet(sheet_name, row_data):
     global client, spreadsheet
 
     if not __SHEET_LOGER_ENABLED:
@@ -310,28 +312,54 @@ def write_to_gsheet(sheet_name, row_data):
         spreadsheet.worksheet(sheet_name).append_row(row_data)
         logging.debug(f'{sheet_name} update successful.')
     
-        """ 
-        ## Commented this out 2024-02-18. I was getting a lot of runtime issues with the specifc 
-        ## exceptions not being imported, and I couldn't see a good reason to keep them all since the {e} should
-        ## tell me everthing
-        except requests.exceptions.ConnectionError:
-            logger.error(f"Failed to send to {sheet_name} due to a network connection error.\nDid not write {row_data}\n\n{e}")
-        
-        except requests.exceptions.Timeout:
-            logger.error(f'Request to log to {sheet_name} timed out.')
-
-        except AccessTokenRefreshError:
-            logger.error(f'Request to log to {sheet_name} failed. Authentication token refresh failed. Please check your credentials.')
-
-        except gspread.exceptions.APIError as e:
-            logger.error(f'Failed to log to {sheet_name} due to an API error: {e}')
-        """        
+       
     except Exception as e:
         logger.error(f"While logging to {sheet_name}. Data not written:{row_data}. Error: {e}")    
+'''
 
 
 
+def write_to_gsheet(sheet_name, row_data, retries=3):
+    global client, spreadsheet
 
+    if not __SHEET_LOGER_ENABLED:
+        return
+
+    if client is None:
+        client = gspread.authorize(creds)
+
+    if spreadsheet is None:
+        spreadsheet = client.open("audio_alchemy_logs")
+
+    for i in range(retries):
+        try:
+            logger.debug(f'Attempting to update the Google sheet {sheet_name}')
+            spreadsheet.worksheet(sheet_name).append_row(row_data)
+            logger.debug(f'{sheet_name} update successful.')
+            return
+        except requests.exceptions.ConnectionError as e:
+            logger.warning(f"Failed to send to {sheet_name} due to a network connection error. Did not write {row_data}\n\n{e}")
+            wait_time = (2 ** i) + random.uniform(0, 1)
+            logger.debug(f"Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+        except requests.exceptions.Timeout as e:
+            logger.warning(f'Request to log to {sheet_name} timed out. Did not write {row_data}\n\n{e}')
+            wait_time = (2 ** i) + random.uniform(0, 1)
+            logger.debug(f"Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
+        except gspread.exceptions.APIError as e:
+            if e.response.status_code == 500:
+                logger.warning(f'Failed to log to {sheet_name} due to an API error: {e}')
+                wait_time = (2 ** i) + random.uniform(0, 1)
+                logger.debug(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                raise e
+        except Exception as e:
+            logger.error(f"While logging to {sheet_name}. Data not written:{row_data}. Error: {e}")
+            break
+
+    logger.error(f"Failed to log to {sheet_name} after {retries} retries. Data not written: {row_data}")
 
 
 
@@ -352,6 +380,8 @@ def get_time():
 def set_logger(external_logger):
     global logger
     logger = external_logger
+
+
 
 
 def main():
