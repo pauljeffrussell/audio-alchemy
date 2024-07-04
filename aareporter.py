@@ -28,6 +28,8 @@ logger = None
 
 __SHEET_LOGER_ENABLED = False
 
+REMOTE_DB_WRITE_CACHE = {}
+
 
 # Use creds to create a client to interact with the Google Drive API
 scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
@@ -133,63 +135,6 @@ def log_system_metrics():
 
 
 
-'''def get_past_day_error_logs():
-# Get the current time
-    now = datetime.datetime.now()
-    # Calculate the time for 24 hours ago
-    one_day_ago = now - datetime.timedelta(days=1.1)
-    
-    # Read the log file lines
-    with open(CONFIG.LOG_FILE_LOCATION , 'r') as file:
-        lines = file.readlines()
-    
-    # Identify the starting point to check entries
-    start_index = len(lines)
-    entry_found = False
-    
-    for i in range(len(lines) - 1, -1, -1):
-        line = lines[i]
-        #if line.startswith("INFO") or line.startswith("ERROR"):
-        if line.startswith("INFO") or line.startswith("ERROR"):
-            parts = line.split(' ', 2)
-            timestamp_str = f"{parts[1]} {parts[2].split(',')[0]}"
-            entry_time = datetime.datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
-            
-            if entry_time <= one_day_ago:
-                start_index = i + 1
-                entry_found = True
-                break
-    
-    # If no entries found, print nothing to report
-    if not entry_found:
-        return None
-    
-    # List to hold entries from the last day
-    recent_entries = []
-    current_entry = []
-    
-    # Collect entries from the start index
-    for line in lines[start_index:]:
-        if line.startswith("INFO") or line.startswith("ERROR"):
-            if current_entry:
-                recent_entries.append("".join(current_entry))
-                current_entry = []
-        current_entry.append(line)
-    
-    # Add the last entry
-    if current_entry:
-        recent_entries.append("".join(current_entry))
-    
-    output = ''
-    # Print the recent entries if found
-    if recent_entries:
-        for entry in recent_entries:
-            output += entry
-    else:
-        return None
-    
-    return output'''
-
 
 def get_past_day_error_logs():
 # Get the current time
@@ -244,7 +189,7 @@ def send_logs_home():
     ## send an email saying you didn't find anything if you didn't find anything.
     if (log_output == None):
         logger.debug(f'No error logs to send home today...')
-        send_email(CONFIG.EMAIL_SEND_TO_FOR_INFO_MESSAGES, send_from_name, "Alchemy is Error Free!!!", '<pre>No errors found for the last 24 hours. Noice!</pre>' )
+        #send_email(CONFIG.EMAIL_SEND_TO_FOR_INFO_MESSAGES, send_from_name, "Alchemy is Error Free!!!", '<pre>No errors found for the last 24 hours. Noice!</pre>' )
         return  
    
     logger.debug(f'Error Logs available. Sending email...')
@@ -293,37 +238,22 @@ def send_email(send_to, send_from_name, subject, body):
         return False
 
 
-'''def write_to_gsheet(sheet_name, row_data):
-    global client, spreadsheet
 
-    if not __SHEET_LOGER_ENABLED:
-        return
-    
-    try:
-        
-        if (client == None):
-            client = gspread.authorize(creds)
-            
-            
-        if (spreadsheet == None):
-            spreadsheet = client.open("audio_alchemy_logs")
-            
-        logger.debug(f'Attempting update the google sheet {sheet_name}')
-        spreadsheet.worksheet(sheet_name).append_row(row_data)
-        logging.debug(f'{sheet_name} update successful.')
-    
-       
-    except Exception as e:
-        logger.error(f"While logging to {sheet_name}. Data not written:{row_data}. Error: {e}")    
 '''
+2024-07-04 Changed retries to 1 because it always seems to fail the number of retries
+           and it's just going to try with the same data one hour later. 
 
-
-
-def write_to_gsheet(sheet_name, row_data, retries=3):
+           Technically I could take out the retry logic, but I'm leaving in case
+           this one retry attempt becomes a problem in the future.
+'''
+def write_to_gsheet(sheet_name, row_data, retries=1):
     global client, spreadsheet
 
     if not __SHEET_LOGER_ENABLED:
         return
+
+    ## let's remember that we're trying to add a row
+    add_to_cache(sheet_name, row_data)
 
     if client is None:
         client = gspread.authorize(creds)
@@ -333,38 +263,102 @@ def write_to_gsheet(sheet_name, row_data, retries=3):
 
     for i in range(retries):
         try:
+
+            ##########################################
+            ##              HAPPY PATH              ##
+            ##########################################
+            
             logger.debug(f'Attempting to update the Google sheet {sheet_name}')
-            spreadsheet.worksheet(sheet_name).append_row(row_data)
+            
+            rows_data = get_cached_data(sheet_name)
+            
+            ## write all the cached rows
+            # this was for testing
+            # if (row_data[1] != "Album3" and row_data[1] != "Album8"):
+            #    raise Exception("Made up Exception")
+            spreadsheet.worksheet(sheet_name).append_rows(rows_data)
+            ## the write succeeded, so let's clear the cache so we don't try to write 
+            ## this/these line in the future.
+            clear_sheet_cache(sheet_name)
+
             logger.debug(f'{sheet_name} update successful.')
             return
-        except requests.exceptions.ConnectionError as e:
-            logger.warning(f"Failed to send to {sheet_name} due to a network connection error. Did not write {row_data}\n\n{e}")
+        
+        except Exception as e:
+            logger.warning(f"While logging to {sheet_name}. Data not written:{rows_data}. Exception: {e}")
             wait_time = (2 ** i) + random.uniform(0, 1)
-            logger.debug(f"Retrying in {wait_time} seconds...")
-            time.sleep(wait_time)
-        except requests.exceptions.Timeout as e:
-            logger.warning(f'Request to log to {sheet_name} timed out. Did not write {row_data}\n\n{e}')
-            wait_time = (2 ** i) + random.uniform(0, 1)
-            logger.debug(f"Retrying in {wait_time} seconds...")
-            time.sleep(wait_time)
-        except gspread.exceptions.APIError as e:
-            if e.response.status_code == 500:
-                logger.warning(f'Failed to log to {sheet_name} due to an API error: {e}')
-                wait_time = (2 ** i) + random.uniform(0, 1)
+            if (i < retries-1):
                 logger.debug(f"Retrying in {wait_time} seconds...")
                 time.sleep(wait_time)
             else:
-                raise e
-        except Exception as e:
-            logger.error(f"While logging to {sheet_name}. Data not written:{row_data}. Error: {e}")
-            break
-
-    logger.error(f"Failed to log to {sheet_name} after {retries} retries. Data not written: {row_data}")
-
-
+                logger.debug(f"Failed all retries this hour. Caching logs until next write attempt.")
+                
+    cache_size = get_cache_length(sheet_name)
+    if (get_cache_length(sheet_name) >= 4):
+        # If the cache has built up this much it means writing has failed for several hours. 
+        logger.error(f"Logging to {sheet_name} has failed for the last {cache_size} hours.")
 
 
 
+
+
+def add_to_cache(sheet_name, data_array):
+    """
+    Add a new data array to the cache for a specific sheet.
+
+    Args:
+    sheet_name (str): The name of the sheet to cache data for.
+    data_array (list): The array of data to be cached.
+
+    Returns:
+    None
+    """
+    global REMOTE_DB_WRITE_CACHE
+    if sheet_name not in REMOTE_DB_WRITE_CACHE:
+        REMOTE_DB_WRITE_CACHE[sheet_name] = []
+    REMOTE_DB_WRITE_CACHE[sheet_name].append(data_array)
+
+def get_cached_data(sheet_name):
+    """
+    Retrieve all cached data for a specific sheet.
+
+    Args:
+    sheet_name (str): The name of the sheet to retrieve data for.
+
+    Returns:
+    list: A list of data arrays cached for the specified sheet.
+          Returns an empty list if no data is cached for the sheet.
+    """
+    global REMOTE_DB_WRITE_CACHE
+    return REMOTE_DB_WRITE_CACHE.get(sheet_name, [])
+
+def clear_sheet_cache(sheet_name):
+    """
+    Clear all cached data for a specific sheet.
+
+    Args:
+    sheet_name (str): The name of the sheet to clear cache for.
+
+    Returns:
+    None
+    """
+    global REMOTE_DB_WRITE_CACHE
+    if sheet_name in REMOTE_DB_WRITE_CACHE:
+        del REMOTE_DB_WRITE_CACHE[sheet_name]
+
+def get_cache_length(sheet_name):
+    """
+    Get the number of data arrays cached for a specific sheet.
+
+    Args:
+    sheet_name (str): The name of the sheet to check cache length for.
+
+    Returns:
+    int: The number of data arrays cached for the specified sheet.
+         Returns 0 if no data is cached for the sheet.
+    """
+    global REMOTE_DB_WRITE_CACHE
+    return len(REMOTE_DB_WRITE_CACHE.get(sheet_name, []))
 
 
 
@@ -386,14 +380,16 @@ def set_logger(external_logger):
 
 def main():
 
-    
+    enable_sheet_logger()
     
     # Create the logger
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
 
     # Create a formatter
-    formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
+    formatter = logging.Formatter('%(levelname)s %(asctime)s %(message)s -- %(funcName)s %(lineno)d')
+    
+    #formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
     # Create a stream handler to log to STDOUT
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setLevel(logging.DEBUG)
@@ -413,10 +409,14 @@ def main():
     track = "1-02 Main Title_Rebel Blockade Runner (Medley).mp3"
 
     #card_type, card_name, uid, rfid)
-    log_card_tap(ALBUM, album_name, album_folder, album_rfid)
+    #log_card_tap(ALBUM, album_name, album_folder, album_rfid)
 
-    log_track_play(album_folder, track)
+    #log_track_play(album_folder, track)
     
+    for i in range(10):
+        print(f"\n\n\n\nIteration {i+1}") 
+        log_track_play(f"Album{i}", f"track{i}")
+        time.sleep(2)
     
 
 

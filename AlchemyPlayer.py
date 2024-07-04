@@ -156,69 +156,6 @@ class PlaybackManager:
         return wrapper
 
 
-'''class PlaybackManager:
-    """
-    Controls the playback of music tracks by periodically calling the keep_playing method
-    in a separate thread. The thread can be started and stopped as needed.
-    """
-    def __init__(self, keep_playing_function, sleep_duration):
-        """
-        Initializes the PlaybackManager with the given keep_playing_function and sleep duration.
-        
-        Args:
-            keep_playing_function: The function that controls the playback of music.
-            sleep_duration: The duration to sleep between calls to keep_playing_function.
-        """
-        self.keep_playing = keep_playing_function
-        self.sleep_duration = sleep_duration
-        self._stop_event = threading.Event()
-        self._lock = threading.RLock()
-        self.thread = None
-
-    def _run(self):
-        """
-        The target method for the thread. Calls the keep_playing_function method
-        every sleep_duration seconds, unless the stop event is set.
-        """
-        while not self._stop_event.is_set():
-            with self._lock:
-                self.keep_playing()
-            time.sleep(self.sleep_duration)
-
-    def start(self):
-        """
-        Starts the thread if it is not already running.
-        """
-        if not self.thread or not self.thread.is_alive():
-            self._stop_event.clear()
-            self.thread = threading.Thread(target=self._run)
-            self.thread.start()
-        
-
-    def stop(self):
-        """
-        Stops the thread if it is running. This method sets the stop event and waits
-        for the thread to finish.
-        """
-        self._stop_event.set()
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
-        self.thread = None
-
-    def lock_decorator(self, func):
-        """
-        Decorator that ensures the decorated function executes within a thread-safe lock.
-
-        Args:
-            func: The function to be decorated.
-
-        Returns:
-            A wrapper function that executes the original function with a lock.
-        """
-        def wrapper(*args, **kwargs):
-            with self._lock:
-                return func(*args, **kwargs)
-        return wrapper'''
 
 def _keep_playing():
     global MUSIC_PAUSED
