@@ -13,10 +13,10 @@ from email.header import Header
 from email.mime.text import MIMEText
 import smtplib
 from oauth2client.service_account import ServiceAccountCredentials
+import threading
 
 """
 These are the types of cards you can tap.
-
 """
 ALBUM = 'ALBUM'
 COMMAND = 'COMMAND'
@@ -69,7 +69,7 @@ def log_card_tap(card_type, card_name, uid, rfid):
         uid,
         rfid
     ]
-    write_to_gsheet("card_taps",row_data)
+    write_to_gsheet_thread("card_taps",row_data)
     #spreadsheet.worksheet("card_taps").append_row(row_data)
 
 
@@ -83,7 +83,7 @@ def log_track_play(folder, track):
         track
     ]
     
-    write_to_gsheet("track_plays",row_data)
+    write_to_gsheet_thread("track_plays",row_data)
     #spreadsheet.worksheet("track_plays").append_row(row_data)
 
 
@@ -96,7 +96,7 @@ def log_album_play(folder):
         folder
     ]
     
-    write_to_gsheet("album_plays",row_data)
+    write_to_gsheet_thread("album_plays",row_data)
     #spreadsheet.worksheet("track_plays").append_row(row_data)
 
 
@@ -107,7 +107,7 @@ def log_aotd(folder, rfid):
         folder,
         rfid
     ]
-    write_to_gsheet("aotd",row_data)
+    write_to_gsheet_thread("aotd",row_data)
     #spreadsheet.worksheet("aotd").append_row(row_data)
 
 
@@ -131,7 +131,7 @@ def log_system_metrics():
         temperature,
         average_cpu_util
     ]
-    write_to_gsheet("system_metrics",row_data)
+    write_to_gsheet_thread("system_metrics",row_data)
 
 
 
@@ -238,6 +238,10 @@ def send_email(send_to, send_from_name, subject, body):
         return False
 
 
+def write_to_gsheet_thread(sheet_name, row_data):
+    thread = threading.Thread(target=write_to_gsheet, args=(sheet_name, row_data,))
+    thread.start()
+
 
 '''
 2024-07-04 Changed retries to 1 because it always seems to fail the number of retries
@@ -246,7 +250,7 @@ def send_email(send_to, send_from_name, subject, body):
            Technically I could take out the retry logic, but I'm leaving in case
            this one retry attempt becomes a problem in the future.
 '''
-def write_to_gsheet(sheet_name, row_data, retries=1):
+def write_to_gsheet(sheet_name, row_data):
     global client, spreadsheet
 
     if not __SHEET_LOGER_ENABLED:
@@ -255,46 +259,42 @@ def write_to_gsheet(sheet_name, row_data, retries=1):
     ## let's remember that we're trying to add a row
     add_to_cache(sheet_name, row_data)
 
+
     if client is None:
         client = gspread.authorize(creds)
 
     if spreadsheet is None:
         spreadsheet = client.open("audio_alchemy_logs")
 
-    for i in range(retries):
-        try:
+    
+    try:
 
-            ##########################################
-            ##              HAPPY PATH              ##
-            ##########################################
-            
-            logger.debug(f'Attempting to update the Google sheet {sheet_name}')
-            
-            rows_data = get_cached_data(sheet_name)
-            
-            ## write all the cached rows
-            # this was for testing
-            # if (row_data[1] != "Album3" and row_data[1] != "Album8"):
-            #    raise Exception("Made up Exception")
-            spreadsheet.worksheet(sheet_name).append_rows(rows_data)
-            ## the write succeeded, so let's clear the cache so we don't try to write 
-            ## this/these line in the future.
-            clear_sheet_cache(sheet_name)
-
-            logger.debug(f'{sheet_name} update successful.')
-            return
+        ##########################################
+        ##              HAPPY PATH              ##
+        ##########################################
         
-        except Exception as e:
-            logger.warning(f"While logging to {sheet_name}. Data not written:{rows_data}. Exception: {e}")
-            wait_time = (2 ** i) + random.uniform(0, 1)
-            if (i < retries-1):
-                logger.debug(f"Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
-            else:
-                logger.debug(f"Failed all retries this hour. Caching logs until next write attempt.")
-                
+        logger.debug(f'Attempting to update the Google sheet {sheet_name}')
+        
+        rows_data = get_cached_data(sheet_name)
+        
+        ## write all the cached rows
+        # this was for testing
+        # if (row_data[1] != "Album3" and row_data[1] != "Album8"):
+        #    raise Exception("Made up Exception")
+        spreadsheet.worksheet(sheet_name).append_rows(rows_data)
+        ## the write succeeded, so let's clear the cache so we don't try to write 
+        ## this/these line in the future.
+        clear_sheet_cache(sheet_name)
+
+        logger.debug(f'{sheet_name} update successful.')
+        return
+    
+    except Exception as e:
+        logger.warning(f"While logging to {sheet_name}. Data not written:{rows_data}. Exception: {e}")
+        
+            
     cache_size = get_cache_length(sheet_name)
-    if (get_cache_length(sheet_name) >= 4):
+    if (cache_size >= 4):
         # If the cache has built up this much it means writing has failed for several hours. 
         logger.error(f"Logging to {sheet_name} has failed for the last {cache_size} hours.")
 
