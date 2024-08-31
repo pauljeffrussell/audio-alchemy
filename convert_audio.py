@@ -215,7 +215,7 @@ def main(bulk_run, dryrun):
         
            
         
-            if (input_value == 'x' or input_value == ''):
+            if (number == 'x' or number == ''):
                 exit()
             else:
             
