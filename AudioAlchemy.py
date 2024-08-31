@@ -1536,19 +1536,21 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
     global DB, DB_AOTD_CACHE, AOTD_REPEAT_LIMIT
     rfid = BLANK
     
-    logger.debug(f'Getting Alum of the day')
+    logger.debug(f'Getting Album of the day')
     
     
     ## Let's see if there already was an album of the day
     found_rfid = check_aotd_cache_for_today(seed_for_random_lookup)  # This will store the found rfid value
     
     if found_rfid != None:
+        logger.debug(f'Found the album of the day in the disk cache.')
         ## We appear to have already saved the album of the day in the cache. So no need to look it up again. 
         return found_rfid
     
     ## Let's see if there's a specific album assigned for today
     found_rfid = get_assigned_aotd_for_today(seed_for_random_lookup)
     if found_rfid != None:
+        logger.debug(f'AOTD Specified for todays date.')
         ## We appear to have an album of the day assigned to this day so no need to pick a random one.
         ## Let's use the one in the DB.
         return found_rfid
@@ -1581,8 +1583,17 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
         available_albums = DB[(~DB['rfid'].isin(aotd_block_list['rfid'])) & (DB['christmas_aotd'] == 1)]
         
         """
-        potential_albums = DB[DB['christmas_aotd'] == 1]
-        logger.debug(f'Getting Christmas albums.')
+        # 2024-08-30 replaced this line with one that deals with blank RFIDs and lable/genre cards
+        #potential_albums = DB[DB['christmas_aotd'] == 1]
+        
+        potential_albums = DB[
+            (DB['christmas_aotd'] == 1) &      # Only choose Christmas Albums of the day
+            (DB['rfid'].notna()) &             # No blank 'rfid' rfids
+            (DB['rfid'] != '') &               # another way to say No blank 'rfid' rfids
+            (DB['label_card'] != 1) &          # Don't accept 'label_card' label cards for AOTD
+            (DB['genre_card'] != 1)            # Don't accept 'genre_card' genre cards for AOTD
+        ]
+        logger.debug(f'Christmas time! Got the list of potential Christmas albums.')
         
     else:
 
@@ -1599,11 +1610,24 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
         """
         
         # Get all the albums that aren't excluded dfrom the album of the day list
-        potential_albums = DB[DB['exclude_from_random'] != 1]
+        #potential_albums = DB[DB['exclude_from_random'] != 1]
+
+
+
+        potential_albums = DB[
+            (DB['exclude_from_random'] != 1) &  # Only choose albums not excluded from AOTD = 'exclude_from_random' not being 1
+            (DB['rfid'].notna()) &             # No blank 'rfid' rfids
+            (DB['rfid'] != '') &               # another way to say No blank 'rfid' rfid
+            (DB['label_card'] != 1) &          # Don't accept 'label_card' label cards for AOTD
+            (DB['genre_card'] != 1)            # Don't accept 'genre_card' genre cards for AOTD
+        ]
+
+        
+
         logger.debug("Got the list of potential albums.")
         
       
-    # figure out how many possible albums there are. You need this to make sure you don't 
+# figure out how many possible albums there are. You need this to make sure you don't 
     # remove too many albums using the AOTD cache.    
     potential_size = len(potential_albums)
     logger.debug(f'Potential Album Count: {potential_size}')
@@ -1611,6 +1635,9 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
     ## get the album of the day cache limited to the AOTD_REPEAT_LIMIT * the lenght of the available tracks.
     try:
         aotd_block_list = DB_AOTD_CACHE.tail(int(len(potential_albums)*AOTD_REPEAT_LIMIT))
+        block_list_size = len(aotd_block_list)
+        logger.debug(f'Block List Album Count: {block_list_size}')
+
     except (FileNotFoundError, pd.errors.EmptyDataError):
         # If the albumoftheday.csv file is not found or empty, then all albums in catalog are available
         aotd_block_list = pd.DataFrame(columns=DB_AOTD_CACHE.columns)  # Empty DataFrame with same columns
@@ -1622,24 +1649,55 @@ def get_album_of_the_day_rfid(seed_for_random_lookup=get_album_of_the_day_seed()
     available_albums = potential_albums[~potential_albums['rfid'].isin(aotd_block_list['rfid'])]
     
     
+    ##This was here for agressive debugging. 
+    # print_dataframe_with_line_breaks(available_albums, ['folder', 'rfid'])
+    
     sample_size = len(available_albums)
-    logger.debug(f'{sample_size} available albums.')
+    logger.debug(f'{sample_size} aotd albums in DB after removing reciently played albums.')
     
     todays_rfid_list = available_albums.sample(n=sample_size, random_state=int(seed_for_random_lookup))['rfid'].tolist()
     
+    ## And just to get silly and make sure we're not following some sort of pattern
+    random.shuffle(todays_rfid_list)
 
+    #print(todays_rfid_list)
     # This was replaced by the above code.
     # found_rfid = None  # This will store the found rfid value
 
     for rfid in todays_rfid_list:
-        if rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+        #if rfid == BLANK or isinstance(rfid, float) or not str(rfid).isdigit():
+        if rfid == BLANK:
+            logger.debug(f'Skipping rfid "{rfid}"')
             continue
         else:
             found_rfid = rfid  # Store the rfid that passed the check
             break
     
-    #print (found_rfid)
+    if found_rfid == None:
+        todays_rfid_list_length = len(todays_rfid_list)
+        logger.error(f'No album of the day found out of todays_rfid_list.\ntodays_rfid_list length is {todays_rfid_list_length} rfids.\nThe list is:\n{todays_rfid_list}')
+    else:
+        logger.debug(f'AOTD RFID = "found_rfid".')
+
     return found_rfid
+
+# Updated function to print only 'folder' and 'rfid' columns with line breaks
+def print_dataframe_with_line_breaks(df, columns):
+    # Select only the specified columns
+    df_selected = df[columns]
+
+    # Convert the selected columns to a list for the header
+    header = " | ".join(df_selected.columns)
+    print(header)
+    print("-" * len(header))
+    
+    # Iterate over the selected DataFrame rows
+    for index, row in df_selected.iterrows():
+        # Convert each row of the selected columns to a string
+        row_string = " | ".join(str(row[col]) for col in columns)
+        print(row_string)
+        print()  # Blank line for separation
+
 
 
 def thanksgiving(year):
