@@ -82,6 +82,6 @@ class AudioPositionDatabase:
         """
         track_info = self.df.loc[self.df['RFID'] == id, ['Track_Number', 'Time_in_Seconds']]
         if not track_info.empty:
-            return track_info.iloc[0]['Track_Number'], track_info.iloc[0]['Time_in_Seconds']
+            return int(track_info.iloc[0]['Track_Number']), track_info.iloc[0]['Time_in_Seconds']
         else:
             return None
