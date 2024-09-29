@@ -897,6 +897,12 @@ def command_card_handler(rfid_code):
         CURRENT_ALBUM_SHUFFLED = False
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play Random Albums", "COMMAND_PLAY_RANDOM_ALBUMS", rfid_code)
         return True 
+    elif (command_code == CONFIG.COMMAND_PLAY_AOTD_HISTORY ):
+        logger.debug('Read RFID to play AOTD history')
+        play_aotd_history_albums()
+        CURRENT_ALBUM_SHUFFLED = False
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play AOTD History Albums", "COMMAND_PLAY_AOTD_HISTORY", rfid_code)
+        return True 
     elif (command_code == CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK):
         logger.debug('Read RFID to play in order from a random track')
         aaplayer.play_in_order_from_random_track()
@@ -1980,6 +1986,28 @@ def send_album_of_the_day_email(rfid):
         print(f"Error occurred: {e}")
 
 
+def play_list_of_albums_by_rfid(album_rfid_list):
+    
+    album_folder_list = []
+    for rfid in album_rfid_list:
+        album_folder_name = lookup_field_by_field(DB, 'rfid', rfid, 'folder')
+        logger.debug(f'Attemptting to load album: {album_folder_name}...')
+
+        if album_folder_name != 0:
+            album_folder = LIBRARY_CACHE_FOLDER + album_folder_name
+            album_folder_list.append(album_folder)
+        
+    tracks = get_tracks(album_folder_list, False)
+    if (len(tracks) > 0):
+        logger.debug (f'Album has tracks. Playing...')
+        aaplayer.play_tracks(tracks, False, False, False, 0)
+    else:
+        logger.warning (f'No tracks found for folder {album_folder}.')
+
+    return tracks
+
+
+
 def play_random_albums():
     """
         Gets CONFIG.RANDOM_ALBUMS_TO_PLAY from the DB as long as they are labeled with 
@@ -2008,8 +2036,9 @@ def play_random_albums():
         else:
              logger.debug(f'Found a rfid already added to the list. Skipping...')
 
+    
+    """  This code was replaced by the playlist of albums by RFID function boil
     album_folder_list = []
-
     for rfid in album_rfid_list:
         album_folder_name = lookup_field_by_field(DB, 'rfid', rfid, 'folder')
         logger.debug(f'Attemptting to load album: {album_folder_name}...')
@@ -2026,6 +2055,38 @@ def play_random_albums():
         logger.warning (f'No tracks found for folder {album_folder}.')
 
     return tracks
+    """
+
+    return play_list_of_albums_by_rfid()
+
+    
+
+def play_aotd_history_albums():
+    """
+    Finds and plays the album of the Day for the last eight days, excluding the current day.
+    Albums will pay in reverse Chronological order so that it starts with yesterday and then the 
+    day before and so on until it's played the entire previous week plus one day. 
+
+
+    Returns: A list of RFID values. If there aren't enough rows, it returns as many as available.
+    """
+    global DB_AOTD_CACHE
+    
+    # If there are no rows or just one row, return an empty list as we cannot exclude the last row
+    if len(DB_AOTD_CACHE) <= 1:
+        logger.debug("Not enough rows in the cache to retrieve RFIDs.")
+        return []
+
+    # Calculate the start index: at most, get 8 rows, but if fewer are available, get as many as possible
+    start_index = max(-len(DB_AOTD_CACHE), -9)  # This dynamically adjusts if there are fewer rows available
+    
+    # Slice the last 9 rows and exclude the last one, then reverse the order
+    album_rfid_list = DB_AOTD_CACHE['rfid'].iloc[start_index:-1][::-1].tolist()
+    
+    return play_list_of_albums_by_rfid(album_rfid_list)
+
+
+
 
 
 def check_aotd_cache_for_today(date_to_check):
