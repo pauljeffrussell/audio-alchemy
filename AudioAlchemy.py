@@ -621,6 +621,14 @@ def signal_handler(sig, frame):
 def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE, AOTD_SCHEDULER
 
+    print ("Setting System Date...")
+
+    ## the read only OS thinks the date is June 2023 on reboot. In order for 
+    ## album of the day to work properly, you need to fetch the current date
+    ## and set the system time.
+    set_ststem_date()
+
+
     logger.info("Starting AlchemyAlchemy...")
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -633,10 +641,7 @@ def alchemy_app_runtime():
     DB_AOTD_CACHE = load_album_of_the_day_cache()
 
 
-    ## the read only OS thinks the date is June 2023 on reboot. In order for 
-    ## album of the day to work properly, you need to fetch the current date
-    ## and set the system time.
-    set_ststem_date()
+    
     
 
     # Load the database of RFID tags and their matching albums
