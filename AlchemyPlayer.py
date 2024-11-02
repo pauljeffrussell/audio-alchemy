@@ -557,7 +557,6 @@ def get_current_track():
     """
     returns the current track that is playing
     """
-    global TRACK_LIST
     if is_playing():
         return TRACK_LIST[current_index]
     else:
@@ -578,6 +577,51 @@ def _jump_to_track(track_index):
     
   
 
+@PLAYBACK_MANAGER.lock_decorator
+def next_track(button_press=True):
+    global current_index, TRACK_LIST, MUSIC_PAUSED, MUSIC_STOPPED, COUNT_REPEATS
+  
+    # Get the next index
+    current_index += 1
+    album_length = len(TRACK_LIST)
+
+
+    if (current_index < album_length ):
+        _play_current_track()
+    elif(button_press and current_index >= album_length):
+        ## Because this was a button push, And we're at the end of the album,
+        ## we should we start playing at the beginning of the album.
+        current_index = 0
+        _play_current_track()
+    elif(S_ALBUM_REPEAT == False and current_index >= album_length):
+        ## you reached the end of the album and it's not supposed to repeat.
+        current_index = 0
+        _stop_player()
+        logger.debug(f'Reached end of album. Stopping playback.')
+        
+    elif (S_ALBUM_REPEAT == True and current_index >= len(TRACK_LIST)):
+        ## The album reached it's end and should now restart
+        current_index = 0
+        
+        ## This is here to make sure we don't just keep playing an album forever.
+        ## This can happen if someone turns off the amplifier without hitting pause. 
+        if (COUNT_REPEATS < CONFIG.MAX_REPLAY_COUNT):
+            COUNT_REPEATS = COUNT_REPEATS + 1
+            _play_current_track()
+            logger.debug(f'Reached end of album. Album set to repeat. Restarting at the album beginning.')
+        else:
+            _stop_player()
+            logger.debug(f'Reached end of album & completed allowed repeats. Stopping playback.')                
+    else:
+        # Load and play the next track
+        _play_current_track()
+        MUSIC_STOPPED = False
+            
+ 
+        
+''' This is the old next_track. I'm not sure why it checks for if is_playing, but
+that makes is a pain to make the remove track card work, so I'm changing it above
+and keeping this so I have a record of how it was supposed to work.
 @PLAYBACK_MANAGER.lock_decorator
 def next_track(button_press=True):
     global current_index, TRACK_LIST, MUSIC_PAUSED, MUSIC_STOPPED, COUNT_REPEATS
@@ -624,7 +668,8 @@ def next_track(button_press=True):
         ## the music wasn't playing. Don't index the track, 
         #just start playing again where ever it stopped.
         play_pause_track()
-        
+       '''
+
 
 @PLAYBACK_MANAGER.lock_decorator
 def prev_track():
