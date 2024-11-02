@@ -931,6 +931,33 @@ def command_card_handler(rfid_code):
             
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Speak Album and Track Name", "COMMAND_SPEEK_CURRENT_TRACK_NAME", rfid_code)
         return True
+    elif (command_code == CONFIG.COMMAND_SEND_REMOVE_REQUEST):
+        ## We're going to email the current track to the 
+        current_track_for_email = aaplayer.get_current_track()
+        if current_track_for_email != None and aaplayer.is_playing():
+                        
+            ## pause the music
+            aaplayer.pause_track()
+
+            ## play the feedback sound that the command card is being processed.
+            aaplayer.play_feedback(CONFIG.COMMAND_SEND_REMOVE_REQUEST_FEEDBACK)
+            
+            ## let the sound play partially before we play the next track
+            time.sleep(1.5) 
+
+            ## Start the next track. We're skipping the current track
+            ## because the user just told us it sucks.
+            aaplayer.next_track()
+
+
+            #send an email with the track we just skipped
+            send_email_with_remove_request(current_track_for_email)
+            
+            
+            aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, f"Remove Track Request {current_track_for_email}", "COMMAND_SEND_REMOVE_REQUEST", rfid_code)
+        else:
+            aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, f"Remove Track Request - No Track Provided", "COMMAND_SEND_REMOVE_REQUEST", rfid_code)    
+        return True
     else:
         return False
     
@@ -2062,7 +2089,7 @@ def play_random_albums():
     return tracks
     """
 
-    return play_list_of_albums_by_rfid()
+    return play_list_of_albums_by_rfid(album_rfid_list)
 
     
 
@@ -2143,11 +2170,13 @@ def get_last_aotd_cache_date():
     else:
         return None
 
-def send_email_with_current_track(current_track_for_email):
+def send_email_with_remove_request(current_track_for_email):
     """
     sends an email with current_track_for_email 
     """
-    
+    logger.debug(f'Sending request to remove email...')
+
+    logger.debug(f'Full path: {current_track_for_email}')
     current_datetime = datetime.now()
     
     formatted_time =  current_datetime.strftime('%H:%M:%S')
@@ -2156,36 +2185,33 @@ def send_email_with_current_track(current_track_for_email):
     parts = current_track_for_email.split('/')
 
     # Skip the first three directories and join the rest
-    album_and_track_name = '/'.join(parts[4:])
+    album_and_track_name = '/'.join(parts[2:])
+    logger.debug(f'album_and_track_name: {album_and_track_name}')
     
     
-    
-    body = f"""{album_and_track_name}<br><br><br>"""
-    
-    
-    
-    #formatted_datetime = current_datetime.strftime('%Y-%m-%d %H:%M:%S')
-    #body = body + f"""<BR><BR><BR><BR>
-    #<div style="font-size: smaller; color: grey;">It is {formatted_datetime}</div>"""
-    
+    body = f"""<br><br><div style="font-size: 1.2em; font-weight: bold;">{parts[2]}</div><br>"""
+    body += f"""<div style="font-size: 1.2em; font-weight: bold; color: RED;">{parts[3]}</div><br>"""
+    body += f"""<br><br>"""
 
+    body += f"""
+        <div style="font-size: smaller; color: grey;">{album_and_track_name}</div> 
+        <BR><BR>     
+        """
+    
     # Email settings
     SMTP_SERVER = 'smtp.gmail.com'
     SMTP_PORT = 587
     SENDER_EMAIL = CONFIG.EMAIL_SENDER_ADDRESS  # Change this to your Gmail
     SENDER_PASSWORD = CONFIG.EMAIL_SENDER_PASSWORD      # Change this to your password or App Password
 
-    # Create the message
-    msg = EmailMessage()
-      
     
-    msg = MIMEText(body, 'html') 
           
-
-                      
-    msg['Subject'] = f'Now Playing at {formatted_time}'
+    msg = MIMEMultipart('related')                  
+    msg['Subject'] = f'Remove Track Request {formatted_time}'
     msg['From'] = CONFIG.EMAIL_SENDER_NAME_FOR_INFO_MESSAGES
     msg['To'] = CONFIG.EMAIL_SEND_TO_FOR_INFO_MESSAGES  # The receiver's email
+    # Attach the HTML body to the email
+    msg.attach(MIMEText(body, 'html'))
 
 
     try:
