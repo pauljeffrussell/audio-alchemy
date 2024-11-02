@@ -290,12 +290,21 @@ def write_to_gsheet(sheet_name, row_data):
         return
     
     except Exception as e:
+        """ 2024-09-28 Since June, I've had this set as a warning which was writing to disk.
+            While, a lot of warnings have been written, it's never actually reached an error 
+            because of the retry logic built into this package.
+            So I'm going to change this from "warning" to "debug"" so that it stops writing to the 
+            log file as there's no real value and having that information persisted anymore.
         logger.warning(f"While logging to {sheet_name}. Data not written:{rows_data}. Exception: {e}")
         
-            
+        Actually, never mind. There's been a lot of warnings lately and I'm not sure what's going on 
+        so we're gonna monitor this some more.
+        """
+        logger.warning(f"While logging to {sheet_name}. Data not written:{rows_data}. Exception: {e}")
     cache_size = get_cache_length(sheet_name)
     if (cache_size >= 4):
-        # If the cache has built up this much it means writing has failed for several hours. 
+        # If the cache has built up this much it means writing has failed for several hours.
+        # or days in the case of the AOTD 
         logger.error(f"Logging to {sheet_name} has failed for the last {cache_size} hours.")
 
 
