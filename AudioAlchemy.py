@@ -3,7 +3,9 @@ from urllib.parse import urlparse, parse_qs
 from yt_dlp import YoutubeDL
 import pandas as pd
 #import pl7 as aaplayer
-import AlchemyPlayer as aaplayer
+## TODO 2024-12-28 Replacing this with the Audio Manager
+#import AlchemyPlayer as aaplayer
+from audio_manager import AudioManager
 import RPi.GPIO as GPIO # Import Raspberry Pi GPIO library  
 from gpiozero import Button
 from mfrc522 import SimpleMFRC522
@@ -200,6 +202,8 @@ IS_SYSTEM_DATE_SET = False
 When set to True, card taps and track plays will be recorded to an external Google sheet.
 """
 ENABLE_REPORT_TO_WEB = False
+
+aaplayer = None
 
 """
 This is the global logger. It gets set when the application starts. 
@@ -619,7 +623,7 @@ def signal_handler(sig, frame):
     app_shutdown()
 
 def alchemy_app_runtime():
-    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE, AOTD_SCHEDULER
+    global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE, AOTD_SCHEDULER, aaplayer
 
     print ("Setting System Date...")
 
@@ -681,6 +685,12 @@ def alchemy_app_runtime():
     start_button_controls()
 
 
+    ### TODO: This is the new audio player. We've replaceed AlchemyPlayer.py with the new AudioManager
+    ### from audio_manager import AudioManager
+    ### AudioAlchemy shouldn't see any difference between the two, but the AudioManager 
+    ### allows us to switch between the file player and the stream player
+    aaplayer = AudioManager()
+    
     #set the logger for the music player
     aaplayer.set_logger(logger)
     aareporter.set_logger(logger)
@@ -809,24 +819,21 @@ def handle_tag_detected(rfid):
         LAST_COMMAND_CARD = rfid
 
 
-## 2024-05-20 deprecated in when I implemted the new handle_tag_detected
-'''def handle_rfid_read(rfid_code):
-    global DB
-    
-    
-    #genre_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'genre_card')
+def rfid_matches_command_card_array(rfid, command_card_array):
+  """
+  This function checks if a number is present in an array.
 
-    #label_card = lookup_field_by_field(DB, 'rfid', rfid_code, 'label_card')
-    #except:
-    #    logger.warning("Could not load genre or label card on RFID read.")
-    
-    if (command_card_handler(rfid_code) == True):
-        ## You found a command card. It's been executed. Don't do anything else.
-        logger.debug(f'Completed command card: {rfid_code}...')
-    else:
-        ## this must be a music card.
-        music_card_handler(rfid_code)
- '''       
+  Args:
+    number: The number to search for.
+    array: The array to search in.
+
+  Returns:
+    True if the number is found in the array, False otherwise.
+  """
+  for element in command_card_array:
+    if element == rfid:
+      return True
+  return False       
 
 def command_card_handler(rfid_code):
     """
@@ -918,8 +925,11 @@ def command_card_handler(rfid_code):
         current_track_for_email = aaplayer.get_current_track()
         if current_track_for_email != None:
                         
+            ## TODO: replace the existing line with the line below it so we use the player to speak
+            ## it contains all the necessary logic
+            #speak_current_track()
+            aaplayer.speak_current_track(CONFIG.FEEDBACK_PROCESSING)
             
-            speak_current_track()
             
             """ THIS IS THE WORKING EMAIL CODE. YOU"RE REPLACING IT WITH SPEACH
             ## play the feedback sound that the command card is being processed.
@@ -1006,7 +1016,26 @@ def music_card_handler(rfid_code):
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
         aareporter.log_card_tap(CONFIG.CARD_TYPE_LABEL, name, label, rfid_code)
         return True
-    
+    elif (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'is_stream')):
+        #this card is a stream card. It is intended to play all of the albums with a matching lable.
+        #label = lookup_field_by_field(DB, 'rfid', rfid_code, 'labels')
+        #label_album_folder_list = get_albums_for_label(label, is_album_shuffle(rfid_code))
+        #tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
+        
+
+        
+        #if (len(tracks) > 0):
+        #    logger.debug (f'Album folder exists. Playing Genre')
+        #    aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)
+        #    CURRENT_ALBUM_SHUFFLED = False
+        
+        url = lookup_field_by_field(DB, 'rfid', rfid_code, 'url')
+        name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+        
+        aaplayer.play_stream(stream_url=url, stream_name=name)
+
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_STREAM, name, url, rfid_code)
+        return True
     else:
         ## it must be an album card or no card at all
         album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
@@ -2346,6 +2375,7 @@ def main(email_flag_set, date_seed, email_now, webdb_set, debug_set, web_report)
     
     
     logger = start_logger(debug_set)
+    
     
     if email_flag_set:
         print("The AOTD will be sent.")

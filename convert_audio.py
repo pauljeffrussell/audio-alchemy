@@ -122,9 +122,10 @@ def check_directories():
      # Check if each directory in './webm/' also exists in './library/'
      for directory in webm_dirs:
          if not os.path.isdir(os.path.join('./library/', directory)):
-             # If directory does not exist in './library/', add it to the list
-             TBD_DOWNLOAD.append(directory)
-             #missing_directories.append(directory)
+             
+            # If directory does not exist in './library/', add it to the list
+            TBD_DOWNLOAD.append(directory)
+            #missing_directories.append(directory)
 
      #print out the list of available 
      for idx, album in enumerate(TBD_DOWNLOAD):
