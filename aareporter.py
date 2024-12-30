@@ -254,6 +254,7 @@ def write_to_gsheet(sheet_name, row_data):
     global client, spreadsheet
 
     if not __SHEET_LOGER_ENABLED:
+        logger.debug(f'Fake Logging: {row_data}')
         return
 
     ## let's remember that we're trying to add a row
