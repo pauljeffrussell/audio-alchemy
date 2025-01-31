@@ -39,6 +39,7 @@ class AudioPositionDatabase:
 
         Updates the DataFrame in memory and saves the changes to the CSV file.
         """
+        id = int(id)
         new_data = pd.DataFrame({'RFID': [id], 'Track_Number': [track_number], 'Time_in_Seconds': [time_in_seconds]})
         if id in self.df['RFID'].values:
             # Update existing entry
@@ -80,7 +81,11 @@ class AudioPositionDatabase:
             tuple or None: Returns a tuple (track_number, time_in_seconds) if the track is found,
             otherwise returns None if the track is not found.
         """
-        track_info = self.df.loc[self.df['RFID'] == id, ['Track_Number', 'Time_in_Seconds']]
+        print(f'getting location for rfid "{id}"')
+        #track_info = self.df.loc[self.df['RFID'] == id, ['Track_Number', 'Time_in_Seconds']]
+        track_info = self.df.loc[self.df['RFID'].astype(str) == str(id), ['Track_Number', 'Time_in_Seconds']]
+    
+        print(f'track_info {track_info}')
         if not track_info.empty:
             return int(track_info.iloc[0]['Track_Number']), track_info.iloc[0]['Time_in_Seconds']
         else:
