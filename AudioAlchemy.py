@@ -136,13 +136,6 @@ LAST_BUTTON_HELD = False
 
 
 """
-Set to true when the current album has been shuffled using a card or holding the play button
-This is used to determine if the next shuffle using the card or button results in a 
-shuffle or unshuffle
-"""
-CURRENT_ALBUM_SHUFFLED = False
-
-"""
 THE CURRENT ALBUM OF THE DAY DATE.
 We'll use this as a seed for pulling the album of the day.
 """
@@ -237,7 +230,8 @@ def start_logger(debug_set):
 
 
     # Create a formatter
-    formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
+    #formatter = logging.Formatter('%(asctime)s -- %(message)s -- %(funcName)s %(lineno)d')
+    formatter = logging.Formatter('%(asctime)s -- %(filename)s:%(lineno)d -- %(funcName)s -- %(message)s')
     # Create a stream handler to log to STDOUT
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setLevel(log_out_level)
@@ -349,6 +343,7 @@ def read_db(csv):
     """
     try:
         return pd.read_csv(csv, dtype={'genre_card': float, 'label_card': float, \
+                                       'is_stream': float, 'is_audiobook': float, \
                                        'shuffle_albums': float, 'shuffle_songs': float, \
                                        'repeat': float, 'christmas_aotd': float, \
                                        'exclude_from_random': float, 'aotd_date': str, \
@@ -594,7 +589,9 @@ def rfid_reader_thread(callback):
             callback(rfid_code)
             time.sleep(SLEEP_DURATION_RFID_READ_LOOP)
     except Exception as e:
-        logger.error(f"Error in RFID thread loop. {e}")
+        stack_trace = traceback.format_exc()
+        logger.error(f"Error in RFID thread loop. {e}. {stack_trace}")
+        
     finally:
         GPIO.cleanup()
         logger.debug(f"Exiting RFID thread loop.")
@@ -892,7 +889,7 @@ def command_card_handler(rfid_code):
 
 
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Reload Database", "COMMAND_STOP_AND_RELOAD_DB", rfid_code)    
-        CURRENT_ALBUM_SHUFFLED = False
+        
         
         logger.debug('Waiting for 2.5 seconds for audio to complete.')
         time.sleep(2.5)
@@ -906,13 +903,11 @@ def command_card_handler(rfid_code):
     elif (command_code == CONFIG.COMMAND_PLAY_RANDOM_ALBUMS ):
         logger.debug('Read RFID to play random albums')
         play_random_albums()
-        CURRENT_ALBUM_SHUFFLED = False
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play Random Albums", "COMMAND_PLAY_RANDOM_ALBUMS", rfid_code)
         return True 
     elif (command_code == CONFIG.COMMAND_PLAY_AOTD_HISTORY ):
         logger.debug('Read RFID to play AOTD history')
         play_aotd_history_albums()
-        CURRENT_ALBUM_SHUFFLED = False
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play AOTD History Albums", "COMMAND_PLAY_AOTD_HISTORY", rfid_code)
         return True 
     elif (command_code == CONFIG.COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK):
@@ -994,7 +989,7 @@ def music_card_handler(rfid_code):
         if (len(tracks) > 0):
             logger.debug (f'Album folder exists. Playing Genre')
             aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)   
-            CURRENT_ALBUM_SHUFFLED = False
+            
         
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
         aareporter.log_card_tap(CONFIG.CARD_TYPE_GENRE, name, genre + "::" + sub_genre, rfid_code)
@@ -1007,14 +1002,24 @@ def music_card_handler(rfid_code):
         tracks = get_tracks(label_album_folder_list, is_song_shuffle(rfid_code))
         
 
-        
-        if (len(tracks) > 0):
-            logger.debug (f'Album folder exists. Playing Genre')
-            aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)
-            CURRENT_ALBUM_SHUFFLED = False
-        
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
-        aareporter.log_card_tap(CONFIG.CARD_TYPE_LABEL, name, label, rfid_code)
+
+        if (len(tracks) > 0):
+            logger.debug (f'Album folder exists. Playing label')
+            if (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'is_audiobook')):
+                logger.debug (f'Audiobook has tracks. Playing Audiobook...')
+                aaplayer.play_audiobook(tracks=tracks, 
+                                        remember_position = is_album_remember_position(rfid_code), 
+                                        rfid=rfid_code)
+                aareporter.log_card_tap(CONFIG.CARD_TYPE_AUDIOBOOK, name, label, rfid_code)
+            
+            else:
+                logger.debug (f'Folder has tracks. Playing Audiobook...')
+                aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)
+                aareporter.log_card_tap(CONFIG.CARD_TYPE_LABEL, name, label, rfid_code)
+        
+        
+       
         return True
     elif (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'is_stream')):
         #this card is a stream card. It is intended to play all of the albums with a matching lable.
@@ -1031,13 +1036,76 @@ def music_card_handler(rfid_code):
         
         url = lookup_field_by_field(DB, 'rfid', rfid_code, 'url')
         name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
-        
-        aaplayer.play_stream(stream_url=url, stream_name=name)
+        if url != 0 and name != 0:
+            aaplayer.play_stream(stream_url=url, stream_name=name)
 
-        aareporter.log_card_tap(CONFIG.CARD_TYPE_STREAM, name, url, rfid_code)
-        return True
+            aareporter.log_card_tap(CONFIG.CARD_TYPE_STREAM, name, url, rfid_code)
+            return True
+        else:
+            handle_unknown_card(rfid_code)
+            return False    
+
+    elif (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'is_podcast')):
+        # this is a podcast card. run the podcast player
+        url = lookup_field_by_field(DB, 'rfid', rfid_code, 'url')
+        name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+        
+        if url != 0 and name != 0:
+            aaplayer.play_podcast(podcast_url=url, podcast_name=name, rfid=rfid_code)
+
+            aareporter.log_card_tap(card_type=CONFIG.CARD_TYPE_PODCAST,
+                                    card_name=name,
+                                    uid=url,
+                                    rfid=rfid_code)
+            return True
+            
+        else:
+            handle_unknown_card(rfid_code)
+            return False
+        
+
+    elif (1 == lookup_field_by_field(DB, 'rfid', rfid_code, 'is_audiobook')):
+        # this is a podcast card. run the podcast player
+        #return handle_audiobook_card(rfid_code)
+        
+        audiobook_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
+        logger.debug(f'Attemptting to play album: {audiobook_folder_name}...')
+
+
+        if audiobook_folder_name != 0:
+            ## the album folder Exists!!!
+            audiobook_folder = LIBRARY_CACHE_FOLDER + audiobook_folder_name
+        
+            tracks = get_tracks([audiobook_folder],shuffle_tracks=False)
+
+            if (len(tracks) > 0):
+                logger.debug (f'Audiobook has tracks. Playing...')
+                aaplayer.play_audiobook(tracks=tracks, 
+                                        remember_position = is_album_remember_position(rfid_code), 
+                                        rfid=rfid_code)
+            else:
+                logger.warning (f'No tracks found for folder {audiobook_folder}.')    
+                
+            name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+            aareporter.log_card_tap(card_type=CONFIG.CARD_TYPE_AUDIOBOOK,  
+                                    card_name=name,  
+                                    uid=audiobook_folder_name,  
+                                    rfid=rfid_code)
+            return True
+        
+        else:
+            ## after all that you didn't find a card.
+            handle_unknown_card(rfid_code)
+            return False
+
+
+        
+        
+
     else:
         ## it must be an album card or no card at all
+        
+
         album_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
         logger.debug(f'Attemptting to play album: {album_folder_name}...')
 
@@ -1052,7 +1120,7 @@ def music_card_handler(rfid_code):
             if (len(tracks) > 0):
                 logger.debug (f'Album has tracks. Playing...')
                 aaplayer.play_tracks(tracks, is_album_repeat(rfid_code), is_song_shuffle(rfid_code), is_album_remember_position(rfid_code), rfid_code)
-                CURRENT_ALBUM_SHUFFLED = False
+                
             
             else:
                 logger.warning (f'No tracks found for folder {album_folder}.')    
@@ -1063,12 +1131,49 @@ def music_card_handler(rfid_code):
         
         else:
             ## after all that you didn't find a card.
-            aaplayer.play_feedback(CONFIG.FEEDBACK_RFID_NOT_FOUND)
-            logger.debug(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
-            name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
-            aareporter.log_card_tap(CONFIG.CARD_TYPE_CARD_UNKNOWN, "Unknown", "Unknown", rfid_code)
+            handle_unknown_card(rfid_code)
             return False
             
+def handle_unknown_card(rfid_code):
+    aaplayer.play_feedback(CONFIG.FEEDBACK_RFID_NOT_FOUND)
+    logger.debug(f'RFID {rfid_code} is unknown to the app. Consider adding it to the DB...')
+    name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+    aareporter.log_card_tap(CONFIG.CARD_TYPE_CARD_UNKNOWN, "Unknown", "Unknown", rfid_code)
+
+
+def handle_audiobook_card(rfid_code, tracks):
+    
+    audiobook_folder_name = lookup_field_by_field(DB, 'rfid', rfid_code, 'folder')
+    logger.debug(f'Playing Audiobook: {audiobook_folder_name}...')
+
+
+    if audiobook_folder_name != 0:
+        ## the album folder Exists!!!
+        audiobook_folder = LIBRARY_CACHE_FOLDER + audiobook_folder_name
+    
+    
+        tracks = get_tracks([audiobook_folder],shuffle_tracks=False)
+
+        if (len(tracks) > 0):
+            logger.debug (f'Audiobook has tracks. Playing...')
+            aaplayer.play_audiobook(tracks=tracks, 
+                                    remember_position = is_album_remember_position(rfid_code), 
+                                    rfid=rfid_code)
+        else:
+            logger.warning (f'No tracks found for folder {audiobook_folder}.')    
+            
+        name = lookup_field_by_field(DB, 'rfid', rfid_code, 'Album')
+        aareporter.log_card_tap(card_type=CONFIG.CARD_TYPE_AUDIOBOOK,  
+                                card_name=name,  
+                                uid=audiobook_folder_name,  
+                                rfid=rfid_code)
+        return True
+    
+    else:
+        ## after all that you didn't find a card.
+        handle_unknown_card(rfid_code)
+        return False
+
 
 def start_button_controls():
  
@@ -1100,7 +1205,7 @@ def button_callback_16(channel):
     # skip this button release if the last button push was held down. 
     if (my_interrupt_handler(channel) and not last_button_held()):
         logger.debug("Previous Track Button was pushed!")
-        aaplayer.prev_track()
+        aaplayer.back_button_short_press()
 
 
 def button_callback_15(channel):
@@ -1118,35 +1223,31 @@ def button_callback_13(channel):
     # skip this button release if the last button push was held down.
     if (my_interrupt_handler(channel) and not last_button_held()):
         logger.debug("Next Track Button was pushed!")
-        aaplayer.next_track()
+        aaplayer.forward_button_short_press()
+        
         
         
 def button_forward_held_callback(channel):
     global LAST_BUTTON_HELD
     LAST_BUTTON_HELD = True
-    logger.debug("SKIP TO NEXT ALBUM!")
-    aaplayer.jump_to_next_album()
+    logger.debug("Forward Button Long Press!")
+    aaplayer.forward_button_long_press()
  
     
 def button_backward_held_callback(channel):
     global LAST_BUTTON_HELD
     LAST_BUTTON_HELD = True
-    logger.debug("SKIP TO PREVIOUS ALBUM!")
-    aaplayer.jump_to_previous_album()
+    logger.debug("Back Button Long Press!")
+    aaplayer.back_button_long_press()
  
-    
+#TODO: Move this logic into the players.
 def button_shuffle_current_songs(channel):
-    global LAST_BUTTON_HELD, CURRENT_ALBUM_SHUFFLED
+    global LAST_BUTTON_HELD
     LAST_BUTTON_HELD = True
-    
-    if CURRENT_ALBUM_SHUFFLED == False:
-        logger.debug("Suffle Current tracks!")
-        aaplayer.shuffle_current_songs()
-        CURRENT_ALBUM_SHUFFLED = True
-    else:
-        logger.debug("Unshuffle current tracks!")
-        aaplayer.unshuffle_current_songs()
-        CURRENT_ALBUM_SHUFFLED = False
+    logger.debug("Play Long Button Press!")
+    aaplayer.shuffle_unshuffle_tracks()
+
+
     
 
 def last_button_held():
@@ -1482,8 +1583,9 @@ def get_tracks(folders, shuffle_tracks):
         
         
         
-    if(shuffle_tracks == True):
-        random.shuffle(all_tracks)  
+    """This is now handled by the music player. 
+        if(shuffle_tracks == True):
+        random.shuffle(all_tracks) """ 
     
     
     #print (all_tracks)
