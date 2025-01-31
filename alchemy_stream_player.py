@@ -42,11 +42,11 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
         except Exception as e:
             self.logger.error(f'Failed to shutdown: {e}')   
 
-    def play_pause_track(self):
+    """def play_pause_track(self):
         if self.is_playing():
             self.player.pause()
         else:
-            self.player.play()
+            self.player.play()"""
 
 
     def get_current_track(self) -> str:
@@ -246,7 +246,8 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
 
     
 
-
+    def _restart(self):
+        self.player.play()
 
 
 
@@ -266,17 +267,23 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
         # Not applicable for streams
         pass
 
-    def prev_track(self):
+
+    def forward_button_short_press(self):
         # Not applicable for streams
         pass
 
-    def jump_to_next_album(self):
+    def back_button_short_press(self):
         # Not applicable for streams
         pass
 
-    def jump_to_previous_album(self):
+    def forward_button_long_press(self):
         # Not applicable for streams
         pass
+
+    def back_button_long_press(self):
+        # Not applicable for streams
+        pass
+
     def pause_track(self):
         """Pause the currently playing stream if applicable."""
         pass
@@ -289,10 +296,8 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
         """No-op for streams; no concept of album repeat here."""
         pass
 
-    def shuffle_current_songs(self):
+    def shuffle_unshuffle_tracks(self):
         """No-op for streams; doesn't apply to continuous streaming."""
         pass
 
-    def unshuffle_current_songs(self):
-        """No-op for streams; doesn't apply to continuous streaming."""
-        pass
+ 
