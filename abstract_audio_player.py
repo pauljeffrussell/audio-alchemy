@@ -3,6 +3,7 @@ import configfile as CONFIG
 from gtts import gTTS
 import subprocess
 import time
+import vlc
 
 class AbstractAudioPlayer(ABC):
     """
@@ -56,6 +57,25 @@ class AbstractAudioPlayer(ABC):
             return False
            
     
+    def play_pause_track(self):
+        """
+        Toggle play/pause
+        """
+        state = self.player.get_state()
+        #self.logger.debug(f"player state: {state}")
+
+        if state == vlc.State.Paused:
+            self.player.play()
+        elif state == vlc.State.Playing:
+            self.player.pause()
+        elif state == vlc.State.Ended:
+            self._restart()
+
+    @abstractmethod
+    def _restart(self):
+        pass        
+            
+
     @abstractmethod
     def speak_current_track(self, intro_sound_file: str = None):
         """Speak the name of the currently playing track."""
@@ -81,10 +101,6 @@ class AbstractAudioPlayer(ABC):
         """Return whether the player is currently playing."""
         pass
 
-    @abstractmethod
-    def play_pause_track(self):
-        """Toggle play/pause for the current track."""
-        pass
 
     @abstractmethod
     def pause_track(self):
@@ -112,32 +128,32 @@ class AbstractAudioPlayer(ABC):
         pass
 
     @abstractmethod
+    def shuffle_unshuffle_tracks(self):
+        pass
+
+
+    @abstractmethod
     def next_track(self):
         """Skip to the next track."""
         pass
 
     @abstractmethod
-    def prev_track(self):
-        """Skip to the prev track."""
+    def forward_button_short_press(self):
+        """Skip to the next track."""
         pass
 
     @abstractmethod
-    def shuffle_current_songs(self):
-        """Randomly shuffle the current playlist."""
-        pass
-
-    @abstractmethod
-    def unshuffle_current_songs(self):
-        """Restore the original (unshuffled) order of the current playlist."""
-        pass
-
-    @abstractmethod
-    def jump_to_next_album(self):
+    def forward_button_long_press(self):
         """Jump to the next album in the playlist."""
         pass
 
     @abstractmethod
-    def jump_to_previous_album(self):
+    def back_button_short_press(self):
+        """Skip to the next track."""
+        pass
+
+    @abstractmethod
+    def back_button_long_press(self):
         """Jump to the previous album in the playlist."""
         pass
 

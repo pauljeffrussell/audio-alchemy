@@ -87,10 +87,9 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
         self.music_paused = True
         self.music_stopped = True
         self.album_loaded = False
+        self.is_shuffled = False
 
         self.s_album_repeat = False
-        self.s_song_shuffle = False
-        self.song_shuffle_original_setting = False
         self.s_remember_position = False
         self.s_album_rfid = None
         self.s_last_track = 0
@@ -117,6 +116,10 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
     def set_logger(self, external_logger):
         self.logger = external_logger
 
+
+
+
+
     def set_repeat_album(self, repeat: bool):
         """
         Tells the current album to repeat.
@@ -134,9 +137,8 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
         self.music_paused = True
         self.music_stopped = True
         self.album_loaded = False
+        self.is_shuffled = False
         self.s_album_repeat = False
-        self.s_song_shuffle = False
-        self.song_shuffle_original_setting = False
         self.s_remember_position = False
         self.s_album_rfid = ''
         self.s_last_track = 0
@@ -219,6 +221,8 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
 
 
     def play_tracks(self, tracks: list, repeat: bool, shuffle: bool, remember_position: bool, rfid: int):
+        
+        self.logger.debug("Starting Music Player...")
         with self.playback_manager._lock:
             if self.album_loaded:
                 self.shutdown_player()
@@ -234,8 +238,6 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
             self.logger.debug(f'Total tracks to play: {self.end_track_index}')
 
             self.s_album_repeat = repeat
-            self.s_song_shuffle = shuffle
-            self.song_shuffle_original_setting = shuffle
             self.count_repeats = 0
 
             self.s_remember_position = remember_position
@@ -260,10 +262,13 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
                 self.play_feedback(CONFIG.FEEDBACK_RECORD_START)
                 time.sleep(1.4)
 
-            # Play the first track, honoring remembered position if set
-            self._play_current_track(check_remember=True)
+            if shuffle == True:
+                ## shuffle the trackw and play
+                self.shuffle_unshuffle_tracks()
+            else:
+                # Play the first track, honoring remembered position if set
+                self._play_current_track(check_remember=True)
 
-            self.music_paused = False
             self.album_loaded = True
 
     def play_pause_track(self):
@@ -276,8 +281,33 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
             else:
                 self.pause_track()
 
+    def forward_button_short_press(self):
+        with self.playback_manager._lock:
+            self.next_track()
+
     def next_track(self, button_press=True):
         with self.playback_manager._lock:
+
+
+            """
+            If this is a track that stores it's position, then skip forward
+            in the track like we're jumping ahead in an audio book instead 
+            of switching tracks. 
+            
+            2025-01 I commented this out because there should be no music tracks 
+            that have this feature And it was causing an issue with tracks
+            not going to the next track.
+            
+            """
+            #if self.s_remember_position == True:
+            #    # we want to skip forward because this is an audiobook
+            #    self.skip_forward() 
+            #    return
+
+            """
+            Advance to the next track in self.media_list.
+            If already at the last track, wrap around to the first track.
+            """
             self.current_index += 1
             album_length = len(self.track_list)
 
@@ -303,8 +333,28 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
                     self._stop_player()
                     self.logger.debug('Reached end of album & completed allowed repeats. Stopping playback.')
 
+    def back_button_short_press(self):
+        with self.playback_manager._lock:
+            self.prev_track()
+
     def prev_track(self):
         with self.playback_manager._lock:
+
+            """
+            If this is a track that stores it's position, then go back
+            10 seconds in the track like we're back 10 seconds in an 
+            audio book instead of switching tracks. 
+            
+            if self.s_remember_position == True:
+                # we want to skip forward because this is an audiobook
+                self.skip_back() 
+                return
+            """
+            
+            """
+            Looks like we need to go to the next track since we're not in 
+            audiobook mode
+            """
             position = pygame.mixer.music.get_pos()
             self.music_paused = False
 
@@ -316,11 +366,53 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
 
             self._play_current_track()
 
+    def skip_forward(self):
+        """
+        Go forward 30 seconds on the current track
+        """
+        with self.playback_manager._lock:
+            try:
+                position_ms = pygame.mixer.music.get_pos()
+                new_position_ms = (position_ms + (CONFIG.FAST_FORWARD_MILLISECONDS) ) 
+                # Convert milliseconds to seconds for pygame.mixer.music.set_pos()
+                new_position_seconds = new_position_ms / 1000.0
+
+                self.logger.debug(f"at: {position_ms} going to: {new_position_ms} (seconds: {new_position_seconds})")
+
+                ## We need to convert two seconds because the pygame player
+                ## expects seconds When adjusting playback but we save 
+                ## position as milliseconds
+                pygame.mixer.music.set_pos(new_position_ms)
+                return True
+            except Exception as e:
+                self.logger.error(f"Error going forward 30 seconds. {e}")
+                return None
+
+
+    def skip_back(self):
+        """
+        Go back 10 seconds on the current track
+        """
+        with self.playback_manager._lock:
+            try:
+                current_pos = pygame.mixer.music.get_pos()   # Convert to seconds
+                new_pos = max(current_pos - CONFIG.REWIND_MILLISECONDS, 0)   # Ensure it doesn't go below 0
+                ## we need to Convert from milliseconds to seconds 
+                # because the pygame player said position works in seconds.
+                pygame.mixer.music.set_pos(new_pos / 1000)
+                
+            except Exception as e:
+                self.logger.error(f"Error going back 10 seconds. {e}")
+                return None
+
     def play_stream(self, stream_url: str, stream_name: str):
         """Play a streaming audio source."""
         pass
 
-    def jump_to_next_album(self):
+    def forward_button_long_press(self):
+        """
+        This will jump to the next album.
+        """
         with self.playback_manager._lock:
             index = self.current_index
             file_paths = self.track_list
@@ -337,7 +429,10 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
             self.logger.debug('No next album found, returning to index 0.')
             self._jump_to_track(0)
 
-    def jump_to_previous_album(self):
+    def back_button_long_press(self):
+        """
+        this will jump to the previous album
+        """
         with self.playback_manager._lock:
             index = self.current_index
             file_paths = self.track_list
@@ -465,22 +560,25 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
             # return the music volume back to normal
             pygame.mixer.music.set_volume(1)
 
-    def shuffle_current_songs(self):
+    def shuffle_unshuffle_tracks(self):
         with self.playback_manager._lock:
-            pygame.mixer.music.stop()
-            self.s_song_shuffle = True
-            random.shuffle(self.track_list)
-            self.current_index = 0
-            self._play_current_track()
+            if self.is_shuffled == True:
+                self.logger.debug("Unsuffle Current tracks!")
+                pygame.mixer.music.stop()
+                # revert to original order
+                self.track_list = self.track_list_original_order.copy()
+                self.is_shuffled = False
+                self.current_index = 0
+                self._play_current_track()
+            else:
+                self.logger.debug("Suffle Current tracks!")
+                pygame.mixer.music.stop()
+                self.is_shuffled = True
+                random.shuffle(self.track_list)
+                self.current_index = 0
+                self._play_current_track()    
 
-    def unshuffle_current_songs(self):
-        with self.playback_manager._lock:
-            pygame.mixer.music.stop()
-            # revert to original order
-            self.track_list = self.track_list_original_order.copy()
-            self.s_song_shuffle = self.song_shuffle_original_setting
-            self.current_index = 0
-            self._play_current_track()
+
 
     def play_in_order_from_random_track(self):
         with self.playback_manager._lock:
@@ -522,15 +620,18 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
             self.logger.debug('Album complete. Reset track position to beginning.')
 
         if self.s_remember_position:
-            position = pygame.mixer.music.get_pos() / 1000.0
+            position = pygame.mixer.music.get_pos()
             if self.current_index == self.s_last_track:
                 position += self.s_last_position
 
+            
             # Adjust position slightly backward if possible
             if position > 10:
                 position -= 10
             else:
                 position = 0
+
+            self.s_last_position = position
 
             self.db_audio_position.add_or_update_entry(self.s_album_rfid, self.current_index, position)
             self.logger.debug(f'Saved track & position: track {self.current_index}, position: {position}')
@@ -545,7 +646,9 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
                     self.logger.debug(f'Starting: {current_track} with remembered position.')
                     pygame.mixer.music.load(current_track)
                     pygame.mixer.music.rewind()
-                    position = self.s_last_position
+                    position = self.s_last_position / 1000
+                    ## we save the track time in ms, but pygame expects
+                    ## seconds when playing 
                     pygame.mixer.music.play(start=position)
                     self.playback_manager.start()
                 else:
@@ -585,12 +688,12 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
 
     def _report_track(self, current_track):
         folder, file_name = self._get_folder_and_file(current_track)
-        self.logger.debug(f'folder: {folder}, file: {file_name}')
+        self.logger.debug(f'logging trackfolder: {folder}, file: {file_name}')
         aareporter.log_track_play(folder, file_name)
 
-        self.logger.debug('preparing to log album')
-        # Only log album if not shuffle
-        if self.previous_folder != folder and not self.s_song_shuffle:
+        #self.logger.debug('preparing to log album')
+        # Only log album if not shuffled
+        if self.previous_folder != folder and not self.is_shuffled:
             self.logger.debug('logging album')
             aareporter.log_album_play(folder)
 
@@ -608,3 +711,6 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
             # Play the next track
             self.logger.debug('Track ended. Playing next track.')
             self.next_track(False)
+
+    def _restart(self):
+        pass

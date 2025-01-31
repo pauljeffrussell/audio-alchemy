@@ -1,8 +1,9 @@
 # audio_manager.py
 from abstract_audio_player import AbstractAudioPlayer
+#from alchemy_files_vlc_player import AlchemyFilesPlayer
 from alchemy_files_player import AlchemyFilesPlayer
 from alchemy_stream_player import AlchemyStreamPlayer
-from alchemy_podcast_vlc_player import AlchemyPodcastPlayer
+from alchemy_podcast_player import AlchemyPodcastPlayer
 
 
 class AudioManager(AbstractAudioPlayer):
@@ -102,21 +103,28 @@ class AudioManager(AbstractAudioPlayer):
         """Skip to the next track on the currently active player."""
         self.current_player.prev_track()
     
-    def shuffle_current_songs(self):
-        """Shuffle the current songs in the playlist of the active player."""
-        self.current_player.shuffle_current_songs()
+    def shuffle_unshuffle_tracks(self):
+        """Shuffle or unshhuffle the current songs in the playlist of the active player."""
+        self.current_player.shuffle_unshuffle_tracks()
 
-    def unshuffle_current_songs(self):
-        """Unshuffle the current songs in the playlist of the active player."""
-        self.current_player.unshuffle_current_songs()
-
-    def jump_to_next_album(self):
+    
+    def forward_button_short_press(self):
         """Jump to the next album on the currently active player."""
-        self.current_player.jump_to_next_album()
+        self.current_player.forward_button_short_press()
 
-    def jump_to_previous_album(self):
+    def back_button_short_press(self):
         """Jump to the previous album on the currently active player."""
-        self.current_player.jump_to_previous_album()
+        self.current_player.back_button_short_press()
+
+
+
+    def forward_button_long_press(self):
+        """Jump to the next album on the currently active player."""
+        self.current_player.forward_button_long_press()
+
+    def back_button_long_press(self):
+        """Jump to the previous album on the currently active player."""
+        self.current_player.back_button_long_press()
 
     def play_tracks(self, tracks: list, repeat: bool, shuffle: bool, remember_position: bool, rfid: int):
         """
@@ -130,7 +138,7 @@ class AudioManager(AbstractAudioPlayer):
 
         self.current_player.play_tracks(tracks, repeat, shuffle, remember_position, rfid)
 
-    def play_stream(self, stream_url: str, stream_name: str):
+    def play_stream(self, stream_url: str, stream_name: str, rfid=int):
         
         if self.current_player is not self.stream_player:
             self.logger.debug(f'Switching to stream player')    
@@ -142,7 +150,7 @@ class AudioManager(AbstractAudioPlayer):
 
         self.current_player.play_stream(stream_url, stream_name)
     
-    def play_podcast(self, podcast_url: str, podcast_name: str):
+    def play_podcast(self, podcast_url: str, podcast_name: str, rfid=int):
         
         if self.current_player is not self.podcast_player:
             self.logger.debug(f'Switching to podcast player')    
@@ -152,9 +160,18 @@ class AudioManager(AbstractAudioPlayer):
         else:
             self.current_player.shutdown_player() 
 
-        self.current_player.play_podcast(podcast_url, podcast_name)
+        self.current_player.play_podcast(podcast_url, podcast_name, rfid)
 
-    
+    def play_audiobook(self,  tracks: list, remember_position=False, rfid=int):
+        if self.current_player is not self.podcast_player:
+            self.logger.debug(f'Switching to audiobook player')    
+            self.current_player.shutdown_player()
+            self.current_player = self.podcast_player
+            self.current_player.startup()
+        else:
+            self.current_player.shutdown_player() 
+
+        self.current_player.play_audiobook(tracks, remember_position, rfid)
 
 
     # TODO: Implement this method
@@ -162,5 +179,8 @@ class AudioManager(AbstractAudioPlayer):
         self.current_player.speak_current_track(intro_sound_file)
         pass
 
+
+    def _restart(self):
+        pass
 
     
