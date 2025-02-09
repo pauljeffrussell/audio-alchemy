@@ -21,7 +21,8 @@ class AudioPositionDatabase:
         """
         self.filename = CONFIG.DB_AUDIO_POSITION
         try:
-            self.df = pd.read_csv(self.filename)
+            self.df = pd.read_csv(self.filename, dtype={'RFID': str})
+            
         except FileNotFoundError:
             # Initialize DataFrame with specified columns if the file does not exist
             self.df = pd.DataFrame(columns=['RFID', 'Track_Number', 'Time_in_Seconds'])
@@ -39,7 +40,7 @@ class AudioPositionDatabase:
 
         Updates the DataFrame in memory and saves the changes to the CSV file.
         """
-        id = int(id)
+        id = str(id)
         new_data = pd.DataFrame({'RFID': [id], 'Track_Number': [track_number], 'Time_in_Seconds': [time_in_seconds]})
         if id in self.df['RFID'].values:
             # Update existing entry
@@ -50,8 +51,25 @@ class AudioPositionDatabase:
         # Save the updated DataFrame to the CSV file
         self.save()
     
+    def remove_entry(self, id):
+        """
+        Removes an entry from the database.
 
-   
+        Args:
+            id (int): The unique identifier of the track to remove.
+
+        If the ID exists in the DataFrame, the row is removed, and the changes are saved to the CSV file.
+        """
+        id = str(id)
+        # Check if the ID exists in the DataFrame
+        if id in self.df['RFID'].values:
+            # Drop the row with the matching RFID and reset the index
+            self.df = self.df[self.df['RFID'] != id]
+            # Save the updated DataFrame to the CSV file
+            self.save()
+        else:
+            print("Entry with given ID does not exist.")
+    
 
     def save(self):
         """
@@ -84,7 +102,6 @@ class AudioPositionDatabase:
         print(f'getting location for rfid "{id}"')
         #track_info = self.df.loc[self.df['RFID'] == id, ['Track_Number', 'Time_in_Seconds']]
         track_info = self.df.loc[self.df['RFID'].astype(str) == str(id), ['Track_Number', 'Time_in_Seconds']]
-    
         print(f'track_info {track_info}')
         if not track_info.empty:
             return int(track_info.iloc[0]['Track_Number']), track_info.iloc[0]['Time_in_Seconds']

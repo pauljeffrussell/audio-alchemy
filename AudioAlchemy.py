@@ -70,7 +70,12 @@ COUNT_SINCE_CARD_REMOVED = 0
 
 SLEEP_DURATION_MAIN_LOOP = 60*60
 
-SLEEP_DURATION_RFID_READ_LOOP = 0.3
+## This is the sleep duration for the RFID reader loop
+SLEEP_DURATION_RFID_READ_LOOP = 0.2
+
+## This is the number of times the RFID reader can read nothing before it
+## considers a card removed
+MAX_COUNT_SINCE_CARD_REMOVED = 4
 
 ## This is the fiel I use to cache the DB so I don't 
 ## have to get it from the web every time.
@@ -764,6 +769,10 @@ def handle_tag_detected(rfid):
         ## The RFID reader won't successfully read every time, so this counter will go up
         ## We reset it back to zero every time we get a matched read.
         COUNT_SINCE_CARD_REMOVED = 0
+
+        ## the last thing that happened wasn't a command card, so reset it.
+        ## so if we see it again it will work right away.
+        LAST_COMMAND_CARD = 0
         return
     
     if (rfid == LAST_COMMAND_CARD):
@@ -781,7 +790,7 @@ def handle_tag_detected(rfid):
         ## A card was read and then nothing was read.
         COUNT_SINCE_CARD_REMOVED += 1
 
-        if (COUNT_SINCE_CARD_REMOVED > 10):
+        if (COUNT_SINCE_CARD_REMOVED > MAX_COUNT_SINCE_CARD_REMOVED):
 
             ## only execute this if the last album hasn't been cleared AND the music isn't playing.
             ## this alows us to pick up the album card and look at it as long as we want
@@ -915,6 +924,11 @@ def command_card_handler(rfid_code):
         aaplayer.play_in_order_from_random_track()
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Play in order from random track", "COMMAND_PLAY_IN_ORDER_FROM_RANDOM_TRACK", rfid_code)
         return True 
+    elif (command_code == CONFIG.COMMAND_SHUFFLE_UNSHUFFLE_PLAYLIST):
+        logger.debug('Read RFID to shuffle/unshuffle playlist')
+        aaplayer.shuffle_unshuffle_tracks()
+        aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Shuffle Playlist", "COMMAND_SHUFFLE_UNSHUFFLE_PLAYLIST", rfid_code)
+        return True
     elif (command_code == CONFIG.COMMAND_SPEEK_CURRENT_TRACK_NAME):
         ## We're going to email the current track to the 
         current_track_for_email = aaplayer.get_current_track()
