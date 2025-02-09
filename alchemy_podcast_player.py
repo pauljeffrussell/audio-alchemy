@@ -60,7 +60,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         self.current_episode_index = 0
         self.podcast_name = 'Untitled Podcast'
         self.is_audiobook = False
-        self.s_last_position = 0
+        #self.s_last_position = 0
 
         self.EPISODE_TITLE = "title"
         self.EPISODE_DATE = "date"
@@ -103,7 +103,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         self.current_loop = 0
         self.current_episode_index = 0
         self.podcast_name = 'Untitled Podcast'
-        self.s_last_position = 0
+        #self.s_last_position = 0
 
 
     def speak_text(self, text: str):
@@ -228,17 +228,17 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
             position_info = self.db_audio_position.get_position_info(self.s_album_rfid)
             if position_info:
                 self.current_episode_index = position_info[0]
-                self.s_last_position = position_info[1]
+                s_last_position = position_info[1]
                 self.logger.debug(f"Found saved position info for RFID: {self.s_album_rfid}, "
                                     f"Track: {position_info[0]}, Time: {position_info[1]}")
             else:
                 self.logger.debug(f"No saved position info found for RFID: {self.s_album_rfid}")
         else:
             self.current_episode_index = 0
-            self.s_last_position = 0
+            s_last_position = 0
 
         
-        self._play_current_episode(starting_time=self.s_last_position)
+        self._play_current_episode(starting_time=s_last_position)
 
 
     def _get_folder_name(self, path):
@@ -249,19 +249,23 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
 
     def _get_track_name(self, path):
         file_name = os.path.basename(path)
-        return file_name
+        name_without_ext, _ = os.path.splitext(file_name)
+        return name_without_ext
 
 
 
     def play_podcast(self, podcast_url: str, podcast_name: str, rfid:int):
         if not podcast_url:
             self.logger.warning("No RSS feed URL provided.")
+            self.play_feedback(CONFIG.FEEDBACK_AUDIO_NOT_FOUND)
             return
 
+        self.play_feedback(CONFIG.FEEDBACK_PODCAST_START, wait=False)
 
         self.is_audiobook = False
         self.podcast_name = podcast_name 
         self.s_album_rfid = rfid      
+        self.s_remember_position = True
         self.logger.debug(f"Fetching podcast RSS feed from {podcast_url}...")
         feed = feedparser.parse(podcast_url)
         if not feed.entries:
@@ -294,7 +298,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
             return
 
 
-        if self.s_remember_position:
+        """if self.s_remember_position:
             self.logger.debug(f"Looking up position info for RFID: {self.s_album_rfid}")
             position_info = self.db_audio_position.get_position_info(self.s_album_rfid)
             if position_info:
@@ -306,9 +310,13 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
                 self.logger.debug(f"No saved position info found for RFID: {self.s_album_rfid}")
         else:
             self.current_episode_index = 0
-            self.s_last_position = 0
+            self.s_last_position = 0"""
+        
+        # position is remembered on a per episode basis and handled 
+        # when you play the episode. So the code above has been commented out because it doesn't do anything.
+        self.current_episode_index = 0
 
-        self._play_current_episode(starting_time=self.s_last_position)
+        self._play_current_episode()
         
 
 
@@ -318,6 +326,10 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         """
         try:
                
+            if self.is_audiobook == False:
+                ## Every podcast episode can remember its own position
+                starting_time = self._get_podcast_episode_postition()
+
             self.logger.debug(f'playing track {self.current_episode_index}  time: {starting_time}')   
             self.player.stop()
 
@@ -350,11 +362,19 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
             return None
     
 
+
+
     def _on_media_player_end(self, event):
         self.logger.debug("Jumping to the next episode...")
+
+        if self.is_audiobook == False:
+            ## pass True so it resets the Podcast track to go 
+            # back to the beginning next time it's played
+            self._save_position(True)
         threading.Thread(target=self.next_track, daemon=True).start()
                 
-      
+
+       
 
     def _resolve_final_url(self, url):
         # This method will now only return the final URL without logging intermediates
@@ -491,7 +511,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         return self.episodes[self.current_episode_index][self.EPISODE_TITLE]
     
     def get_current_track(self):
-        return self.get_current_podcast_and_track_name(self)
+        return self.get_current_podcast_and_track_name()
         
     def get_current_track_url(self):
         return self.episodes[self.current_episode_index][self.EPISODE_URL]
@@ -545,6 +565,20 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
             self.logger.error(f"An exception occurred while describing the track name: {e}")
             return "Error describing track."
     
+    def play_pause_track(self):
+        
+        
+        state = self.player.get_state()
+        #self.logger.debug(f"player state: {state}")
+
+        if state == vlc.State.Paused:
+            self.player.play()
+        elif state == vlc.State.Playing:
+            self.player.pause()
+            self.logger.debug('Paused audio.')
+            self._save_position(restart_album=False)
+        elif state == vlc.State.Ended:
+            self._restart()
 
     def pause_track(self):
         """
@@ -553,19 +587,28 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         if self.player.get_state() == vlc.State.Playing:
             self.player.pause()
             self.logger.debug('Paused album.')
-            self._save_position(restart_album=False)
+            self._save_position(restart_album=False)   
 
- 
+    
 
     ##TODO
     def _save_position(self, restart_album):
+        self.logger.debug('Checking to save position')
+        if self.s_remember_position:
+            if self.is_audiobook:
+                self.logger.debug('Saving audiobook position')
+                self._save_position_audiobook(restart_album)
+            else:
+                self.logger.debug('Saving podcast spisode position')
+                self._save_position_podcast_episode(restart_album)  
+       
+    def _save_position_audiobook(self, restart_album):
         """
         Save track position in the DB if 'remember_position' is enabled.
         """
-
         ## if we reached the end we're going to be told to go back to the beginning
         if self.s_remember_position and restart_album:
-            self.db_audio_position.add_or_update_entry(self.s_album_rfid, 0, 0)
+            self.db_audio_position.remove_entry(self.s_album_rfid)
             self.logger.debug('Album complete. Reset track position to beginning.')
 
 
@@ -578,6 +621,39 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
 
             self.db_audio_position.add_or_update_entry(self.s_album_rfid, self.current_episode_index, position_ms)
             self.logger.debug(f'Saved track & position: track {self.current_episode_index}, position: {position_ms}')
+
+
+    def _save_position_podcast_episode(self, restart_eposide_next_time):
+
+        if restart_eposide_next_time:
+            self.db_audio_position.remove_entry(self._get_podcast_episode_id())
+        else:
+            position_ms = self.player.get_time()  # get_time() returns ms
+            ## Rewind a little bit, so we have some context when we start replaying
+            position_ms = max(position_ms - CONFIG.REWIND_SAVE_POSITION_MILLISECONDS, 0)
+            self.db_audio_position.add_or_update_entry(self._get_podcast_episode_id(), 0, position_ms)
+            self.logger.debug(f'Saved track & position: track {self._get_podcast_episode_id()}, position: {position_ms}')
+
+
+    def _get_podcast_episode_postition(self):
+        """
+        Get the saved position for the current podcast episode.
+        """
+        position = self.db_audio_position.get_position_info(self._get_podcast_episode_id())       
+        if position:
+            return position[1]
+        else:
+            return 0
+
+
+
+
+    def _get_podcast_episode_id(self):
+        ## This is the UID we'll use to store the position of the track
+        ## in the position DB
+        return str(self.s_album_rfid) + "_" + self.get_current_track_url()    
+    
+
 
 
     def get_day_suffix(self, day):

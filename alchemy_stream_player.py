@@ -284,6 +284,20 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
         # Not applicable for streams
         pass
 
+
+    def play_pause_track(self):
+        
+        state = self.player.get_state()
+        #self.logger.debug(f"player state: {state}")
+
+        if state == vlc.State.Paused:
+            self.player.play()
+        elif state == vlc.State.Playing:
+            self.player.pause()
+            self.logger.debug('Paused Stream.')
+        elif state == vlc.State.Ended:
+            self._restart()
+
     def pause_track(self):
         """Pause the currently playing stream if applicable."""
         pass

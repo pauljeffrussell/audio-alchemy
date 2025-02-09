@@ -56,20 +56,9 @@ class AbstractAudioPlayer(ABC):
             self.logger.debug(f'Something went wrong getting or saving the audio. {e}')
             return False
            
-    
+    @abstractmethod
     def play_pause_track(self):
-        """
-        Toggle play/pause
-        """
-        state = self.player.get_state()
-        #self.logger.debug(f"player state: {state}")
-
-        if state == vlc.State.Paused:
-            self.player.play()
-        elif state == vlc.State.Playing:
-            self.player.pause()
-        elif state == vlc.State.Ended:
-            self._restart()
+       pass
 
     @abstractmethod
     def _restart(self):
