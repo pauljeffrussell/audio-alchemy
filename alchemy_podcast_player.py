@@ -79,8 +79,6 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         self.db_audio_position = AudioPositionDatabase()
         
 
-        # OLD GLOBALS I"M NOT SURE WHAT TO DO WITH
-        self.initialized = False
 
        
 
@@ -103,7 +101,61 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         self.current_loop = 0
         self.current_episode_index = 0
         self.podcast_name = 'Untitled Podcast'
-        #self.s_last_position = 0
+        self.player = self.player_instance.media_player_new()
+        self.feedback_player = self.feedback_instance.media_player_new()
+        
+    def shutdown_player(self):
+        """
+        Shutdown the podcast player
+        """
+        try:
+
+
+            self.logger.debug(f"Shutting down podcast player.")
+            self.track_list = []
+            self.track_list_original_order = []
+            
+            if self.player is None and self.feedback_player is None:
+                self.logger.debug(f"Podcast player is already shutdown.")
+                return
+            
+            self.player.stop()
+            self.feedback_player.stop()
+
+            # give vlc time to stop playing before we try to release the memory
+            time.sleep(0.1)
+            
+            ## Lets free up the memory from the stream player
+            self.logger.debug(f"Releaseing vlc memory.")
+            media = self.player.get_media()
+            if media is not None:
+                media.release()  
+          
+            self.player.release()
+            
+
+            ## Lets free up the memory from the feedback stream player
+            feedback_media = self.player.get_media()
+            if feedback_media is not None:
+                feedback_media.release()  
+            self.feedback_player.release()
+
+            
+            
+            time.sleep(0.1)
+
+            #Now set all the media players to None.
+            #So we really, really don't hold on to them.
+            media = None 
+            self.player = None
+            feedback_media = None
+            self.feedback_player = None
+            time.sleep(0.1)
+
+        except Exception as e:
+            self.logger.error(f'Failed to shutdown podcast player: {e}')   
+
+
 
 
     def speak_text(self, text: str):
@@ -255,6 +307,11 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
 
 
     def play_podcast(self, podcast_url: str, podcast_name: str, rfid:int):
+        
+        #Cleanup
+        self.shutdown_player()
+        self.startup()
+        
         if not podcast_url:
             self.logger.warning("No RSS feed URL provided.")
             self.play_feedback(CONFIG.FEEDBACK_AUDIO_NOT_FOUND)
@@ -398,13 +455,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
 
     
        
-    def shutdown_player(self):
-        """
-        Shutdown the audio player
-        """
-        self.logger.debug('Starting Player Shutdown')
-        self.pause_track()
-        self.logger.debug('Completed Player Shutdown')
+    
 
 
     """def next_track(self):

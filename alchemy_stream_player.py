@@ -25,28 +25,60 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
         # But we must implement the method to fulfill the abstract class requirements.
         self.current_stream = None
         self.stream_name = None
-        self.instance = vlc.Instance()
+        #commenting this out so we don't leak memory by creating lots of 
+        #instances of vlc
+        #self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
-        self.feedback_instance = vlc.Instance()
+        #self.feedback_instance = vlc.Instance()
         self.feedback_player = self.feedback_instance.media_player_new()
         
 
     def shutdown_player(self):
         try:
+            self.logger.debug(f"Shutting down stream player.")
             self.stream_name = None
             self.current_stream = None
+
+            if self.player is None and self.feedback_player is None:
+                self.logger.debug(f"Stream player is already shutdown.")
+                return
+
             self.player.stop()
             self.feedback_player.stop()
-            time.sleep(0.2)
+
+            # give vlc time to stop playing before we try to release the memory
+            time.sleep(0.1)
+            
+            ## Lets free up the memory from the stream player
+            self.logger.debug(f"Releaseing vlc memory.")
+            media = self.player.get_media()
+            if media is not None:
+                media.release()  
+          
+            self.player.release()
+            
+
+            ## Lets free up the memory from the feedback stream player
+            feedback_media = self.player.get_media()
+            if feedback_media is not None:
+                feedback_media.release()  
+            self.feedback_player.release()
+
+            
+            
+            time.sleep(0.1)
+
+            #Now set all the media players to None.
+            #So we really, really don't hold on to them.
+            media = None 
+            self.player = None
+            feedback_media = None
+            self.feedback_player = None
+            time.sleep(0.1)
 
         except Exception as e:
-            self.logger.error(f'Failed to shutdown: {e}')   
+            self.logger.error(f'Failed to shutdown stream player: {e}')   
 
-    """def play_pause_track(self):
-        if self.is_playing():
-            self.player.pause()
-        else:
-            self.player.play()"""
 
 
     def get_current_track(self) -> str:
