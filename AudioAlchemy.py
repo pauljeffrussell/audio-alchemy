@@ -573,7 +573,7 @@ def set_date_from_last_aotd():
         except Exception as e:
             logger.error(f"An exception occurred while trying to set the system date: {e}") 
     else:
-        logger.error(f"Unable to set temp system date from AOTD Cache. {e}") 
+        logger.error(f"AOTD Cache is empty. Unable to set temp system date from AOTD Cache.") 
         
     
 def rfid_reader_thread(callback):
@@ -1191,9 +1191,20 @@ def handle_audiobook_card(rfid_code, tracks):
 
 def start_button_controls():
  
+    #Left button - previous track
+    button16 = Button(CONFIG.LEFT_BUTTON_PIN)
+    
+    #center button - play/pause
+    button15 = Button(CONFIG.CENTER_BUTTON_PIN) 
+
+    ## right button - next track
+    button13 = Button(CONFIG.RIGHT_BUTTON_PIN)
+
+    """
+    ## converted over to using config file 2025-02-17
     button16 = Button("BOARD16")
-    button15 = Button("BOARD7")
-    button13 = Button("BOARD13")
+    button15 = Button("BOARD38") ## 2025-02-06 changed from BOARD7 to BOARD38
+    button13 = Button("BOARD13")"""
 
 
 
