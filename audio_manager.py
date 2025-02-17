@@ -144,9 +144,11 @@ class AudioManager(AbstractAudioPlayer):
             self.logger.debug(f'Switching to stream player')    
             self.current_player.shutdown_player()
             self.current_player = self.stream_player
-            self.current_player.startup()
-        else:
-            self.current_player.shutdown_player() 
+            #self.current_player.startup()
+        #else:
+            # I don't need this because the player manages it's state
+            # internally when switching between streams
+            #self.current_player.shutdown_player() 
 
         self.current_player.play_stream(stream_url, stream_name)
     
@@ -156,7 +158,7 @@ class AudioManager(AbstractAudioPlayer):
             self.logger.debug(f'Switching to podcast player')    
             self.current_player.shutdown_player()
             self.current_player = self.podcast_player
-            self.current_player.startup()
+            #self.current_player.startup()
         else:
             self.current_player.shutdown_player() 
 
