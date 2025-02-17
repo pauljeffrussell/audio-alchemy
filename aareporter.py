@@ -124,16 +124,22 @@ def log_system_metrics():
     #get the 15 minute average
     average_cpu_util = (cpu_load_avg[2] / num_cores) * 100
 
-
+    memory_used = get_memory_usage()
     
     row_data = [
         get_time(),
         temperature,
-        average_cpu_util
+        average_cpu_util,
+        memory_used
     ]
     write_to_gsheet_thread("system_metrics",row_data)
 
 
+def get_memory_usage():
+    mem_info = subprocess.run(['free', '-m'], stdout=subprocess.PIPE).stdout.decode().splitlines()[1]
+    total_memory, used_memory, free_memory, _, _, available_memory = map(int, mem_info.split()[1:])
+    used_memory_percentage = (used_memory / total_memory) * 100
+    return used_memory_percentage
 
 
 def get_past_day_error_logs():
@@ -286,9 +292,21 @@ def write_to_gsheet(sheet_name, row_data):
         ## the write succeeded, so let's clear the cache so we don't try to write 
         ## this/these line in the future.
         clear_sheet_cache(sheet_name)
-
         logger.debug(f'{sheet_name} update successful.')
-        return
+        
+        
+        ## Opportunistic cache Writing
+        ## We made sure the sheet in question updated. Now let's try to update any other sheets
+        ## with a cache that has built up.
+        for sheet_name in REMOTE_DB_WRITE_CACHE:
+            rows_data = get_cached_data(sheet_name)
+            if (len(rows_data) > 0):
+                logger.debug(f'Attempting to update the Google sheet {sheet_name}')
+                spreadsheet.worksheet(sheet_name).append_rows(rows_data)
+                clear_sheet_cache(sheet_name)
+                logger.debug(f'{sheet_name} update successful.')
+
+            
     
     except Exception as e:
         """ 2024-09-28 Since June, I've had this set as a warning which was writing to disk.
@@ -302,6 +320,7 @@ def write_to_gsheet(sheet_name, row_data):
         so we're gonna monitor this some more.
         """
         logger.warning(f"While logging to {sheet_name}. Data not written:{rows_data}. Exception: {e}")
+    
     cache_size = get_cache_length(sheet_name)
     if (cache_size >= 4):
         # If the cache has built up this much it means writing has failed for several hours.
