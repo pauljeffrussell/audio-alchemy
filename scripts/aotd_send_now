@@ -1,0 +1,17 @@
+#!/bin/bash
+## This line mounts the new Media drive
+#sudo mount /dev/disk/by-uuid/287d419a-a2ea-48bd-b347-2b423a37a108 /media/test
+
+
+## mount the pulse directory  to tmpfs so we don't see all the symlink issues 
+#sudo mount -t tmpfs -o size=128M tmpfs /root/.config/pulse
+
+
+## This line launches the audio alchemy app in the background.
+cd /mnt/audioalchemy
+source ./venv/bin/activate
+python3 -B ./AudioAlchemy.py --aotd_send_now --debug
+
+## This was the line I used when I wanted a log fiel to be written. 
+## this was turned off to preserve the life of the USB key
+#sudo /usr/bin/python3 -B /media/audioalchemy/AudioAlchemy.py > /media/audioalchemy/1medialog.log 2>&1 &
