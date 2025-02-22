@@ -298,7 +298,7 @@ def write_to_gsheet(sheet_name, row_data):
         ## Opportunistic cache Writing
         ## We made sure the sheet in question updated. Now let's try to update any other sheets
         ## with a cache that has built up.
-        for sheet_name in REMOTE_DB_WRITE_CACHE:
+        for sheet_name in list(REMOTE_DB_WRITE_CACHE.keys()):
             rows_data = get_cached_data(sheet_name)
             if (len(rows_data) > 0):
                 logger.debug(f'Attempting to update the Google sheet {sheet_name}')
