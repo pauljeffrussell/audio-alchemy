@@ -679,8 +679,20 @@ def alchemy_app_runtime():
         
         rfid = get_aotd_rfid_for_date(PARAM_COMMAND_LINE_SEED_DAY)
         send_album_of_the_day_email(rfid)
+        ## if we're doing this then The larger application is
+        # probably running somewhere and we need to kill this version
+        # After we send the email so that it doesn't
+        # Interfere with the other one.
+        logger.debug(f'Exiting after sending AOTD')
+        sys.exit("Shutting down AOTD Sender script")
     elif(FLAG_AOTD_SEND_NOW == True ):
         schedule_handler_send_aotd()
+        ## if we're doing this then The larger application is
+        # probably running somewhere and we need to kill this version
+        # After we send the email so that it doesn't
+        # Interfere with the other one.
+        logger.debug(f'Exiting after sending AOTD')
+        sys.exit("Shutting down AOTD Sender script")
         
 
     # Set up the event handlers for the button controls
