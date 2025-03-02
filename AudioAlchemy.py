@@ -1282,7 +1282,8 @@ def button_shuffle_current_songs(channel):
     global LAST_BUTTON_HELD
     LAST_BUTTON_HELD = True
     logger.debug("Play Long Button Press!")
-    aaplayer.shuffle_unshuffle_tracks()
+    #aaplayer.shuffle_unshuffle_tracks()
+    aaplayer.middle_button_long_press()
 
 
     
