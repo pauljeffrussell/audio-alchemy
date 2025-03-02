@@ -1,6 +1,6 @@
 import vlc
 import time
-import os
+import aareporter
 from abstract_audio_player import AbstractAudioPlayer
 import configfile as CONFIG
 
@@ -134,20 +134,6 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
             self.feedback_player.audio_set_volume(self.feexback_volume)
 
             
-            """current_volume = self.player.audio_get_volume()
-            self.logger.debug(f"The current player volume is: {current_volume}")
-            current_volume = self.feedback_player.audio_get_volume()
-            self.logger.debug(f"The current feedback_player volume is: {current_volume}")
-
-            ##play audio feedback so the user knows the card tap worked
-            ## it'll take a second before the audio plays back
-            #self.play_feedback(CONFIG.FEEDBACK_PROCESSING)
-            self.play_feedback(CONFIG.FEEDBACK_STREAM_START, wait=True)
-            
-            ### VOLUME CHECK ###
-            current_volume = self.player.audio_get_volume()
-            self.logger.debug(f"After Feedback The current volume is: {current_volume}")
-"""
             self.logger.debug(f"Playing stream: {self.stream_name}")
             self.player.play()
 
@@ -161,30 +147,20 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
             self.logger.debug(f"just after playing The current volume is: {current_volume}")
 
             
-            """self.logger.debug(f"Prepping speach file")
-            # Speak the name of the stream
-            if self.prepare_speech_file(f"{self.stream_name}"):
-                self.play_feedback(CONFIG.TEMP_SPEECH_WAV, wait=True)
-            else:
-                self.play_feedback(CONFIG.FEEDBACK_AUDIO_NOT_FOUND)
+            
 
-
-            ## VOLUME CHECK ###
-            current_volume = self.player.audio_get_volume()
-            self.logger.debug(f"just after playing The current volume is: {current_volume}")"""
 
             ## Pause after the Speech so it doesn't sound like the volume jumps right back up
             time.sleep(0.3)
 
-            #self.increase_player_to_max_volume()
-            """for i in range(50, 101, 5):  # Start at 50, go up to 100, increment by 5
-                self.player.audio_set_volume(i)
-                time.sleep(0.1)"""
+     
+            
 
             ## VOLUME CHECK ###
             current_volume = self.player.audio_get_volume()
             self.logger.debug(f"volumn should be {self.max_volume} now. The current volume is: {current_volume}")
 
+            aareporter.report_track(self.stream_name, "stream")
         except Exception as e:
             self.logger.error(f'Unable to play stream "{stream_name}": {e}')    
 
@@ -343,6 +319,10 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
         pass
 
     def shuffle_unshuffle_tracks(self):
+        """No-op for streams; doesn't apply to continuous streaming."""
+        pass
+
+    def middle_button_long_press(self):
         """No-op for streams; doesn't apply to continuous streaming."""
         pass
 
