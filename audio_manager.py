@@ -107,6 +107,10 @@ class AudioManager(AbstractAudioPlayer):
         """Shuffle or unshhuffle the current songs in the playlist of the active player."""
         self.current_player.shuffle_unshuffle_tracks()
 
+    def middle_button_long_press(self):
+        """ tell the player to do what it does for a middle button long press"""
+        self.current_player.middle_button_long_press()
+
     
     def forward_button_short_press(self):
         """Jump to the next album on the currently active player."""
