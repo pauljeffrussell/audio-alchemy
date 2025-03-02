@@ -120,6 +120,11 @@ class AbstractAudioPlayer(ABC):
     def shuffle_unshuffle_tracks(self):
         pass
 
+    @abstractmethod
+    def middle_button_long_press(self):
+        pass
+
+
 
     @abstractmethod
     def next_track(self):
