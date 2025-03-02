@@ -23,6 +23,7 @@ echo $ALCHEMY_IP
 # Rsync command to sync files
 #rsync -razv --progress ./streamer.py $RSYNC_USER@$ALCHEMY_IP:$RSYNC_DEST
 rsync -razv --progress ./*.py $RSYNC_USER@$ALCHEMY_IP:$RSYNC_DEST
+#rsync -razv --progress ./aotd_send_now $RSYNC_USER@$ALCHEMY_IP:$RSYNC_DEST
 
 
 
