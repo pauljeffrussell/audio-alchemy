@@ -409,6 +409,9 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
         """Play a streaming audio source."""
         pass
 
+    def middle_button_long_press(self):
+        self.shuffle_unshuffle_tracks()
+
     def forward_button_long_press(self):
         """
         This will jump to the next album.
