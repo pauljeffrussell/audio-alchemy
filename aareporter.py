@@ -14,6 +14,7 @@ from email.mime.text import MIMEText
 import smtplib
 from oauth2client.service_account import ServiceAccountCredentials
 import threading
+from queue import Queue, Empty
 
 """
 These are the types of cards you can tap.
@@ -30,6 +31,64 @@ __SHEET_LOGER_ENABLED = False
 
 REMOTE_DB_WRITE_CACHE = {}
 
+# Create a queue for all writes and a single thread to process them
+WRITE_QUEUE = Queue()
+WRITE_THREAD = None
+WRITE_THREAD_RUNNING = False
+WRITE_EVENT = threading.Event()
+
+def write_worker():
+    """Single thread that processes all writes from the queue"""
+    global WRITE_THREAD_RUNNING
+    while WRITE_THREAD_RUNNING:
+        try:
+            # Wait for new data or shutdown signal
+            WRITE_EVENT.wait()
+            if not WRITE_THREAD_RUNNING:
+                break
+                
+            # Process all available data
+            while True:
+                try:
+                    sheet_name, row_data = WRITE_QUEUE.get_nowait()
+                    write_to_gsheet(sheet_name, row_data)
+                    WRITE_QUEUE.task_done()
+                except Empty:
+                    break
+                    
+            # Clear the event until new data arrives
+            WRITE_EVENT.clear()
+            
+        except Exception as e:
+            logger.error(f"Error in write worker: {e}")
+            WRITE_EVENT.clear()
+
+def shutdown_write_thread():
+    """Gracefully shutdown the write thread"""
+    global WRITE_THREAD_RUNNING, WRITE_THREAD
+    if WRITE_THREAD_RUNNING:
+        WRITE_THREAD_RUNNING = False
+        if WRITE_THREAD and WRITE_THREAD.is_alive():
+            WRITE_THREAD.join(timeout=5)  # Wait up to 5 seconds for the thread to finish
+            if WRITE_THREAD.is_alive():
+                logger.warning("Write thread did not shut down gracefully")
+
+def start_write_thread():
+    """Start the write worker thread if it's not already running"""
+    global WRITE_THREAD, WRITE_THREAD_RUNNING
+    if not WRITE_THREAD_RUNNING:
+        WRITE_THREAD_RUNNING = True
+        WRITE_THREAD = threading.Thread(target=write_worker)
+        WRITE_THREAD.daemon = True  # Thread will exit when main program exits
+        WRITE_THREAD.start()
+
+def write_to_gsheet_thread(sheet_name, row_data):
+    """Add a write task to the queue and signal the worker"""
+    global WRITE_THREAD
+    if WRITE_THREAD is None or not WRITE_THREAD.is_alive():
+        start_write_thread()
+    WRITE_QUEUE.put((sheet_name, row_data))
+    WRITE_EVENT.set()  # Signal the worker that new data is available
 
 # Use creds to create a client to interact with the Google Drive API
 scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
@@ -244,10 +303,12 @@ def send_email(send_to, send_from_name, subject, body):
         return False
 
 
+'''
+2025-03-06 Replace this with a version tied to a thread, so I would not have duplicate rights due to threading issues.
 def write_to_gsheet_thread(sheet_name, row_data):
     thread = threading.Thread(target=write_to_gsheet, args=(sheet_name, row_data,))
     thread.start()
-
+'''
 
 '''
 2024-07-04 Changed retries to 1 because it always seems to fail the number of retries
