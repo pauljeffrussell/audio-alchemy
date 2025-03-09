@@ -17,6 +17,7 @@ import random
 import time
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+import pytz
 import configfile as CONFIG
 import requests
 import subprocess
@@ -624,6 +625,20 @@ def signal_handler(sig, frame):
     logger.info("Received signal to terminate. Shutting down...")
     app_shutdown()
 
+def confirm_aotd_send(date_str, artist_name, album_name):
+    """Helper function to show AOTD confirmation prompt and get user response"""
+    print(f"\nAbout to send AOTD email:\n")
+    print(f"Date: {date_str}")
+    print(f"Artist: {artist_name}")
+    print(f"Album: {album_name}")
+    print(f"Sending To: {CONFIG.EMAIL_SEND_TO}\n")
+    print("\nType 'YES' to proceed, or anything else to cancel: ", end='')
+    
+    confirmation = input().strip()
+    if confirmation != "YES":
+        print("Cancelled sending Album of the Day.")
+        sys.exit(0)
+
 def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE, AOTD_SCHEDULER, aaplayer
 
@@ -634,66 +649,68 @@ def alchemy_app_runtime():
     ## and set the system time.
     set_ststem_date()
 
-
     logger.info("Starting AlchemyAlchemy...")
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
 
     ## Load the album of the day cache.
     ## If there isn't one, make one.
     ## This has to happen first, because we need the file to be there
     ## for the next step
     DB_AOTD_CACHE = load_album_of_the_day_cache()
-
-
     
-    
-
     # Load the database of RFID tags and their matching albums
     DB = load_database(FLAG_LOAD_DB_FROM_THE_WEB)
-    
     
     ## Every time the system restarts restart the system. Album of the day will instead 
     ## be sent the day after the system is rebooted.
     set_album_of_the_day_date_and_rfid()
     
     AOTD_SCHEDULER = BackgroundScheduler()
-    if FLAG_AOTD_ENABLED == True:
+    
+    # Define timezone once for all scheduler jobs
+    eastern = pytz.timezone('America/New_York')
+    
+    if FLAG_AOTD_ENABLED == True and not FLAG_AOTD_SEND_NOW:
         ## We should schedule the sending of the album of the day.
-        logger.debug("Scheduleing the AOTD for 4:20am.")
-        AOTD_SCHEDULER.add_job(schedule_handler_send_aotd, CronTrigger(hour=4, minute=20))
+        logger.debug("Scheduling the AOTD for 4:20am Eastern Time.")
+        AOTD_SCHEDULER.add_job(schedule_handler_send_aotd, CronTrigger(hour=4, minute=20, timezone=eastern))
         
-    logger.debug("Scheduleing error log email for 4:25am.")
-    AOTD_SCHEDULER.add_job(schedule_handler_send_receint_errors, CronTrigger(hour=4, minute=25))
+    logger.debug("Scheduling error log email for 4:25am Eastern Time.")
+    AOTD_SCHEDULER.add_job(schedule_handler_send_receint_errors, CronTrigger(hour=4, minute=25, timezone=eastern))
 
     AOTD_SCHEDULER.start()
 
-    #def send_logs_home():    
-    
+    if FLAG_AOTD_SEND_NOW == True:
 
-    if FLAG_AOTD_SEND_NOW == True and PARAM_COMMAND_LINE_SEED_DAY != None:
-        ## The command line args say send the email now
-
-        logger.debug(f'Looking up album for today: {PARAM_COMMAND_LINE_SEED_DAY}...')
+        if PARAM_COMMAND_LINE_SEED_DAY != None:
+            # Using provided seed date
+            print(f'Looking up album for date: {PARAM_COMMAND_LINE_SEED_DAY}...')
+            date_str = PARAM_COMMAND_LINE_SEED_DAY
+            
+            cached_rfid = get_aotd_rfid_for_date(PARAM_COMMAND_LINE_SEED_DAY)
+        else:
+            # Get today's date in YYYYMMDD format
+            date_str = datetime.today().strftime('%Y%m%d')
+            cached_rfid = check_aotd_cache_for_today(date_str)
         
-        rfid = get_aotd_rfid_for_date(PARAM_COMMAND_LINE_SEED_DAY)
-        send_album_of_the_day_email(rfid)
+        
+        if cached_rfid is None:
+            sys.exit(f"\n\nExiting - no cached album of the day found for {date_str}")
+            
+        # Get album details and confirm
+        album_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', cached_rfid, 'Album'))
+        artist_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', cached_rfid, 'Artist'))
+        
+        confirm_aotd_send(date_str, artist_name, album_name)
+        
+        # Send the email using the cached RFID
         ## if we're doing this then The larger application is
         # probably running somewhere and we need to kill this version
         # After we send the email so that it doesn't
         # Interfere with the other one.
-        logger.debug(f'Exiting after sending AOTD')
-        sys.exit("Shutting down AOTD Sender script")
-    elif(FLAG_AOTD_SEND_NOW == True ):
-        schedule_handler_send_aotd()
-        ## if we're doing this then The larger application is
-        # probably running somewhere and we need to kill this version
-        # After we send the email so that it doesn't
-        # Interfere with the other one.
-        logger.debug(f'Exiting after sending AOTD')
-        sys.exit("Shutting down AOTD Sender script")
-        
+        send_album_of_the_day_email(cached_rfid)
+        sys.exit("\n\nShutting down AOTD Sender script")
 
     # Set up the event handlers for the button controls
     start_button_controls()
@@ -863,7 +880,7 @@ def command_card_handler(rfid_code):
     global DB, APP_RUNNING
     command_code = str(rfid_code)
     
-    if (command_code == CONFIG.COMMAND_PLAY_ALBUM_OF_THE_DAY):
+    if (command_code == CONFIG.COMMAND_PLAY_ALBUM_OF_THE_DAY or command_code == CONFIG.COMMAND_PLAY_ALBUM_OF_THE_DAY_2):
         logger.debug('Playing Album of the day.')
         play_album_of_the_day()
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Album of the day", "COMMAND_PLAY_ALBUM_OF_THE_DAY", rfid_code)        
@@ -2137,7 +2154,7 @@ def send_album_of_the_day_email(rfid):
     <BR><BR><BR><BR>
     """
     
-    if loaded_hq == "y":
+    '''if loaded_hq == "y":
         body = body + f"""
         <div style="font-size: smaller; color: grey;">Best recording quality uploaded. Use the hammer to play the album.</div> 
         <BR><BR><BR><BR>       
@@ -2147,7 +2164,7 @@ def send_album_of_the_day_email(rfid):
         <div style="font-size: smaller; color: grey;">Uploaded album quality is <b>meh</b>. Use the hammer to play the album.</div>  
         <BR><BR><BR><BR>      
         """
-    
+    '''
     # Email settings
     SMTP_SERVER = 'smtp.gmail.com'
     SMTP_PORT = 587
@@ -2518,14 +2535,14 @@ def main(email_flag_set, date_seed, email_now, webdb_set, debug_set, web_report)
     
     
     if email_flag_set:
-        print("The AOTD will be sent.")
+        print("The AOTD will be scheduled to be sent.")
         FLAG_AOTD_ENABLED = True
     else:
         print("AOTD Email Disabled")
         
         
     if email_now:
-        print("Email will be sent today if --aotd_enabled passed")
+        print("Email will be sent immediately and then the app will exit.")
         FLAG_AOTD_SEND_NOW = True
     else:
         print("First AOTD email will be sent tomorrow.")
