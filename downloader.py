@@ -21,6 +21,8 @@ import pandas as pd
 import logging
 import configfile as CONFIG
 import argparse
+import time
+import random
 
 logging.basicConfig(format=' %(message)s -- %(funcName)s %(lineno)d', level=logging.INFO)
 
@@ -33,6 +35,10 @@ LIBRARY_SOURCE_FOLDER = "./webm/" # This is where we put the full source files.
 # Use these two parameters to identify the google sheet with your album database
 DB_SHEET_ID = CONFIG.DB_SHEET_ID
 DB_SHEET_NAME = CONFIG.DB_SHEET_ID
+
+PANDORA_COLUMN = 'pandora_id'
+FOLDER_COLUMN = 'folder'
+URL_COLUMN = 'URL'
 
 REPORT = ""
 
@@ -92,6 +98,9 @@ class loggerOutputs:
 #   Given a youtube music URL and a folder, it downloads the contents of that URL to the folder
 #  
 ##################################################################################### 
+
+
+
 def download_album(url, folder):
     global FAILED_DOWNLOADS, REPORT
     # Download the video
@@ -106,14 +115,16 @@ def download_album(url, folder):
                 
     ydl_opts={#'final_ext': 'mp3',
      'format': 'bestaudio/best',
-     #'username': 'russelldad@gmail.com',
+     
      'ignoreerrors': True,
-     #'cookies-from-browser': 'brave',
-     #'cookies': './cookies.txt',
-     #'cookies-from-browser': '/Users/paul/Library/Application Support/BraveSoftware/Brave-Browser',
-     #'nooverwrites': True,
+     
+     'cookiefile': './keys/music.youtube.com_cookies_rd.txt',
+     
      'no-abort-on-error': True,
-     #"quiet": True,
+     
+     'sleep_interval': 5,
+     'max_sleep_interval': 23,
+     'sleep_requests': 1,
      
      "logger": loggerOutputs,
      
@@ -143,6 +154,7 @@ def download_album(url, folder):
             #TRACK_NAME = info['title']
             #logging.info(f"Downloaded track: {track_title}")
             ydl.download([url])
+            random_sleep()
         except:
             logging.warning(f'Failed to Download Track. {url}')
     logging.info("Completed album download.")
@@ -244,7 +256,11 @@ def list_non_downloaded_albums():
             print("{}  {}".format(idx, album))
     
 
-
+def random_sleep():
+    # Generate a random value between 2 and 6 seconds 
+    duration = random.uniform(1.5, 4)
+    print(f"Sleeping for {duration} seconds.")
+    time.sleep(duration)
 
 
 def main(bulk_download, dryrun):
@@ -282,6 +298,7 @@ def main(bulk_download, dryrun):
                 print("You need to get this from google drive\n\n")
             else:
                 download_album(url_to_download,folder)
+                #random_sleep()
         print("\n\n#######################################")
         print("            BULK DOWNLOAD COMPLETE")
         print("#######################################\n")
@@ -313,6 +330,7 @@ def main(bulk_download, dryrun):
                     keepgoing = input('Press any key to continue')
                 else:
                     download_album(url_to_download,folder)
+                    
             
 
 
