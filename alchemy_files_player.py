@@ -165,9 +165,13 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
         # Shutdown the audio player
         self.logger.debug('Starting Player Shutdown')
         self.pause_track()
-        pygame.mixer.music.stop()
-        pygame.quit()
+        try:
+            pygame.mixer.music.stop()
+            pygame.quit()
+        except Exception as e:
+            self.logger.info(f'pygame mixer not loaded when attempting to shutdown: {e}')
         self.mixer_loaded = False
+        self.album_loaded = False
         self.logger.debug('Completed Player Shutdown')
 
     def play_feedback(self, feedback_file: str, wait: bool = False):
