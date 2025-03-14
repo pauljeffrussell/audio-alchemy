@@ -715,6 +715,9 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         """
         Return whether the player is currently playing.
         """
+
+        if self.player is None:
+            return False
         return self.player.is_playing()
 
 
