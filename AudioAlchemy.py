@@ -679,6 +679,11 @@ def alchemy_app_runtime():
     logger.debug("Scheduling error log email for 4:25am Eastern Time.")
     AOTD_SCHEDULER.add_job(schedule_handler_send_receint_errors, CronTrigger(hour=4, minute=25, timezone=eastern))
 
+
+    logger.debug("Scheduling player shutdown to address times when the player is left on overnight.")
+    AOTD_SCHEDULER.add_job(schedule_handler_shutdown_player, CronTrigger(hour=3, minute=15, timezone=eastern))
+
+
     AOTD_SCHEDULER.start()
 
     if FLAG_AOTD_SEND_NOW == True:
@@ -2081,6 +2086,18 @@ def schedule_handler_send_receint_errors():
         logger.error(f"Skipping sending logs home due to time system time not being synchronized.")
         return
     aareporter.send_logs_home()
+
+
+
+
+def schedule_handler_shutdown_player():
+    """
+    This function shuts down the player at 3:15am Eastern Time.
+
+    This is to address times when the player is left on overnight.
+    """
+    logger.debug("Scheduled shutdown of the player.")
+    aaplayer.shutdown_player()
 
 def find_card_png(directory):
     """
