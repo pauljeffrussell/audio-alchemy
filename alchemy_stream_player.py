@@ -160,7 +160,7 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
             current_volume = self.player.audio_get_volume()
             self.logger.debug(f"volumn should be {self.max_volume} now. The current volume is: {current_volume}")
 
-            aareporter.report_track(self.stream_name, "stream")
+            aareporter.log_track_play(self.stream_name, "stream")
         except Exception as e:
             self.logger.error(f'Unable to play stream "{stream_name}": {e}')    
 
@@ -244,6 +244,9 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
 
 
     def is_playing(self) -> bool:
+
+        if self.player is None:
+            return False
         return self.player.is_playing() == 1
     
 
@@ -255,7 +258,24 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
     
 
     def _restart(self):
-        self.player.play()
+
+        try:
+            # this is going to take a few seconds to start
+            self.player.play()
+
+            # So let's play some feedback to let the user know that it's working.
+            self.player.audio_set_volume(self.min_volume)
+            
+            self.play_feedback(CONFIG.VOICE_FEEDBACK_STREAM_RESTART, wait=False)
+            
+            time.sleep(0.3)
+            
+            self.increase_player_to_max_volume()
+
+        except Exception as e:
+            self.logger.error(f'Error restarting stream: {e}') 
+
+        
 
 
 
@@ -300,8 +320,11 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
 
         if state == vlc.State.Paused:
             self.player.play()
+        elif state == vlc.State.Stopped:
+            self._restart()
         elif state == vlc.State.Playing:
-            self.player.pause()
+            #self.player.pause()
+            self.player.stop()
             self.logger.debug('Paused Stream.')
         elif state == vlc.State.Ended:
             self._restart()
