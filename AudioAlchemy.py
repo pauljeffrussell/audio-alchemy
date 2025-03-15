@@ -2098,6 +2098,12 @@ def schedule_handler_shutdown_player():
     """
     logger.debug("Scheduled shutdown of the player.")
     aaplayer.shutdown_player()
+    time.sleep(1)
+    logger.debug("Player shutdown complete.")
+    ## we need to restart the player after shutting it down. 
+    ## so that the player doesn't impload when we call functions like play_pause_track()
+    ## when the player isn't started up
+    aaplayer.startup()
 
 def find_card_png(directory):
     """
