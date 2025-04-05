@@ -184,6 +184,9 @@ def log_system_metrics():
     average_cpu_util = (cpu_load_avg[2] / num_cores) * 100
 
     memory_used = get_memory_usage()
+
+    if memory_used > 30:
+        logger.error(f"Memory usage is {memory_used}%")
     
     row_data = [
         get_time(),

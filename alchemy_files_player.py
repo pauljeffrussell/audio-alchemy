@@ -164,15 +164,27 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
     def shutdown_player(self):
         # Shutdown the audio player
         self.logger.debug('Starting Player Shutdown')
-        self.pause_track()
         try:
-            pygame.mixer.music.stop()
-            pygame.quit()
+            if self.mixer_loaded:
+                self.pause_track()
+                pygame.mixer.music.stop()
+                pygame.mixer.quit()
+                pygame.quit()
+                self.mixer_loaded = False
         except Exception as e:
             self.logger.info(f'pygame mixer not loaded when attempting to shutdown: {e}')
-        self.mixer_loaded = False
         self.album_loaded = False
         self.logger.debug('Completed Player Shutdown')
+
+    def cleanup_memory(self):   
+        """
+        Cleanup memory for the file player.
+        """
+        try:
+            self.shutdown_player()
+            self.startup()
+        except Exception as e:
+            self.logger.error(f'Failed to cleanup memory for file player: {e}')
 
     def play_feedback(self, feedback_file: str, wait: bool = False):
         # Play a feedback sound based on the given type (here we treat feedback_type as a file)

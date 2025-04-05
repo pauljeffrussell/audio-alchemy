@@ -64,6 +64,9 @@ class AbstractAudioPlayer(ABC):
     def _restart(self):
         pass        
             
+    @abstractmethod
+    def cleanup_memory(self):
+        pass
 
     @abstractmethod
     def speak_current_track(self, intro_sound_file: str = None):
