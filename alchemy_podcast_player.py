@@ -27,6 +27,7 @@ class AudioDownloader:
         :param resolved_url: Direct URL to the MP3 file.
         :param logger: Logger instance for logging events.
         """
+        # The podcast name should already be sanitized when passed in
         self.podcast_name = podcast_name
         self.episode_date = episode_date
         self.episode_id = episode_id
@@ -48,7 +49,7 @@ class AudioDownloader:
 
     def _sanitize_filename(self, filename):
         """Replace invalid characters in filenames with underscores."""
-        return re.sub(r'[<>:"/\\|?*]', '_', filename)
+        return re.sub(r'[<>:"/\\|?*]', '.', filename)
 
     def _get_episode_file_path(self):
         """Generate the full file path where the episode will be saved."""
@@ -67,15 +68,34 @@ class AudioDownloader:
         else:
             self.logger.error("Download failed.")
 
+    def cleanup(self):
+        """
+        Clean up resources and thread references.
+        Should be called when the downloader is no longer needed.
+        """
+        if self.download_thread and not self.download_thread.is_alive():
+            self.download_thread = None
+            self.logger.debug("Cleaned up completed download thread")
+
     def start_download(self):
         """
         Start the download in a new thread.
         Returns the expected file path immediately.
         """
-        self.download_complete = False  # Reset the flag
-        self.percent_downloaded = 0.0     # Reset the percent downloaded
-        self.download_thread = threading.Thread(target=self._download_in_background, daemon=True)
-        self.download_thread.start()
+        # Clean up any existing completed thread
+        self.cleanup()
+        
+        if os.path.exists(self.cached_file_path):
+            self.logger.debug(f"Episode already cached: {self.cached_file_path}")
+            self.percent_downloaded = 100.0
+            self.download_complete = True
+            self.download_thread = None
+            self.download_succeded = True
+        else:
+            self.download_complete = False  # Reset the flag
+            self.percent_downloaded = 0.0     # Reset the percent downloaded
+            self.download_thread = threading.Thread(target=self._download_in_background, daemon=True)
+            self.download_thread.start()
 
         return self.cached_file_path  # Return file path immediately
 
@@ -121,6 +141,7 @@ class AudioDownloader:
             self.logger.error(f"Error downloading episode: {e}")
             return False
 
+    
 class AlchemyPodcastPlayer(AbstractAudioPlayer):
     """
     A VLC-based implementation of AbstractAudioPlayer for playing local files (MP3s, WAVs, etc.).
@@ -166,7 +187,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
     def _init_vlc_instances(self):
         """Initialize VLC player instances"""
         # Main player setup
-        self.player_instance = vlc.Instance("--aout=alsa")
+        self.player_instance = vlc.Instance('--aout=alsa')
         if self.player_instance is None:
             raise RuntimeError("Failed to create VLC instance")
         
@@ -205,6 +226,16 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         try:
             self.logger.debug(f"Shutting down podcast player.")
             
+            # Clean up downloader if it exists
+            if hasattr(self, 'downloader'):
+                self.downloader.cleanup()
+                del self.downloader
+            
+            # Check if player attributes exist
+            if not hasattr(self, 'player') or not hasattr(self, 'feedback_player'):
+                self.logger.debug(f"Podcast player attributes not initialized yet.")
+                return
+            
             if self.player is None and self.feedback_player is None:
                 self.logger.debug(f"Podcast player is already shutdown.")
                 return
@@ -212,24 +243,28 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
             self._save_position(restart_album=False)
             
             # Stop playback
-            self.player.stop()
-            self.feedback_player.stop()
+            if self.player is not None:
+                self.player.stop()
+            if self.feedback_player is not None:
+                self.feedback_player.stop()
             
             # give vlc time to stop playing before we try to release the memory
             time.sleep(0.1)
             
             # Release main player resources
             self.logger.debug(f"Releasing vlc memory.")
-            media = self.player.get_media()
-            if media is not None:
-                media.release()
-            self.player.release()
+            if self.player is not None:
+                media = self.player.get_media()
+                if media is not None:
+                    media.release()
+                self.player.release()
             
             # Release feedback player resources
-            feedback_media = self.feedback_player.get_media()
-            if feedback_media is not None:
-                feedback_media.release()
-            self.feedback_player.release()
+            if self.feedback_player is not None:
+                feedback_media = self.feedback_player.get_media()
+                if feedback_media is not None:
+                    feedback_media.release()
+                self.feedback_player.release()
             
             # Clear track lists
             self.track_list = []
@@ -239,13 +274,33 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
 
             # Set players to None to ensure proper garbage collection
             # but keep VLC instances alive for reuse
-            self.player = None
-            self.feedback_player = None
             media = None
             feedback_media = None
+            if hasattr(self, 'player'):
+                del self.player
+            if hasattr(self, 'feedback_player'):
+                del self.feedback_player
 
         except Exception as e:
             self.logger.error(f'Failed to shutdown podcast player: {e}')
+
+    def cleanup_memory(self):
+        """
+        Cleanup memory for the podcast player.
+        """
+        try:
+            self.logger.debug(f"Cleaning up stream player memory.")
+            self.shutdown_player()
+            self.player_instance.release()
+            self.feedback_instance.release()
+            time.sleep(0.2)
+            del self.player_instance, self.feedback_instance
+            self._init_vlc_instances()
+            time.sleep(0.1)
+            self.startup()
+        except Exception as e:
+            self.logger.error(f'Failed to cleanup memory for podcast player: {e}')
+
 
     def speak_text(self, text: str):
         pass
@@ -427,6 +482,13 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         name_without_ext, _ = os.path.splitext(file_name)
         return name_without_ext
 
+    def sanitize_for_url(self, text):
+        """
+        Replace special characters (non-alphanumeric and non-space)
+        with a hyphen.
+        """
+        # Replace any character that is not a letter, digit, or space with '-'
+        return re.sub(r'[^A-Za-z0-9 ]', '', text)
 
 
     def play_podcast(self, podcast_url: str, podcast_name: str, rfid:int):
@@ -443,11 +505,10 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         self.play_feedback(CONFIG.FEEDBACK_PODCAST_START, wait=False)
         self.logger.debug("Passed podcasr RSS download feedback sound.")
 
-        
-
-
         self.is_audiobook = False
-        self.podcast_name = podcast_name 
+        self.logger.debug(f"Original podcast name: {podcast_name}")
+        self.podcast_name = self.sanitize_for_url(podcast_name)
+        self.logger.debug(f"Sanitized podcast name: {self.podcast_name}")
         self.s_album_rfid = rfid      
         self.s_remember_position = True
         self.logger.debug(f"Fetching podcast RSS feed from {podcast_url}...")
@@ -557,8 +618,15 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         Play the current episode in the list.
         """
         try:
-               
-            
+            # Clean up previous downloader if it exists
+            if hasattr(self, 'downloader'):
+                self.downloader.cleanup()
+                del self.downloader
+
+            # Explicitly release any previous media object. This is new 2025-04-03
+            current_media = self.player.get_media()
+            if current_media is not None:
+                current_media.release()
 
             self.logger.debug(f'playing podcast episode {self.current_episode_index}  start_time: {starting_time}')   
             self.player.stop()
@@ -570,12 +638,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
                 url = self._resolve_final_url(self.get_current_track_url())
                 self.set_current_track_resolved_url(url)
 
-            
-            # we need to cache this episode as a file before we play it.
-            # This is because VLC can't play a stream and remember the position.
-            # So we need to cache the file and play it from the cache.
-            self.logger.debug(f'Caching episode file: {url}')
-
+            self.logger.debug(f"Creating downloader with podcast name: {self.podcast_name}")
             # Create the downloader
             self.downloader = AudioDownloader(
                 podcast_name=self.podcast_name,
@@ -585,6 +648,7 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
                 resolved_url=self.get_current_track_resolved_url(),
                 logger=self.logger
             )
+            self.logger.debug(f"Downloader created with podcast name: {self.downloader.podcast_name}")
 
             self.logger.debug(f'Starting Download')
             # Start downloading and return the filename
@@ -679,11 +743,9 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
 
     def sanitize_filename(self, filename):
         """Replace invalid characters in filenames with underscores."""
-        return re.sub(r'[<>:"/\\|?*]', '_', filename)  # Replace invalid characters
+        return re.sub(r'[<>:"/\\|?*]', '.', filename)  # Replace invalid characters
 
     
-
-
 
     def _on_media_player_end(self, event):
         self.logger.debug("Jumping to the next episode...")

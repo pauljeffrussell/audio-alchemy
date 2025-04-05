@@ -37,6 +37,9 @@ import traceback
 import aareporter
 from gtts import gTTS
 import signal
+import psutil
+import objsize
+import gc
 
 
 
@@ -639,6 +642,122 @@ def confirm_aotd_send(date_str, artist_name, album_name):
         print("Cancelled sending Album of the Day.")
         sys.exit(0)
 
+def log_memory_usage():
+    """
+    Log detailed memory usage information, broken down by major components.
+    """
+    try:
+        process = psutil.Process()
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Overall process memory
+        process_memory = process.memory_info().rss / 1024 / 1024  # Convert to MB
+        
+        logger.info(f"\n=== Memory Usage Report at {timestamp} ===")
+        logger.info(f"Total Process Memory: {process_memory:.2f} MB")
+        
+        if 'aaplayer' in globals():
+            logger.info("\n=== Audio Players ===")
+            
+            # Stream Player (VLC-based)
+            if hasattr(aaplayer, 'stream_player'):
+                stream_size = objsize.get_deep_size(aaplayer.stream_player) / 1024 / 1024
+                logger.info(f"Stream Player Total: {stream_size:.2f} MB")
+                
+                # Get detailed VLC memory info for stream player
+                if hasattr(aaplayer.stream_player, 'instance'):
+                    vlc_size = objsize.get_deep_size(aaplayer.stream_player.instance) / 1024 / 1024
+                    logger.info(f"  - VLC Instance: {vlc_size:.2f} MB")
+                    
+                    # Get media info if playing
+                    if hasattr(aaplayer.stream_player, 'player') and aaplayer.stream_player.player is not None:
+                        media = aaplayer.stream_player.player.get_media()
+                        if media:
+                            media_size = objsize.get_deep_size(media) / 1024 / 1024
+                            logger.info(f"  - Current Media: {media_size:.2f} MB")
+            
+            # Podcast Player (VLC-based)
+            if hasattr(aaplayer, 'podcast_player'):
+                podcast_size = objsize.get_deep_size(aaplayer.podcast_player) / 1024 / 1024
+                logger.info(f"Podcast Player Total: {podcast_size:.2f} MB")
+                
+                # Get detailed VLC memory info for podcast player
+                if hasattr(aaplayer.podcast_player, 'player_instance'):
+                    vlc_size = objsize.get_deep_size(aaplayer.podcast_player.player_instance) / 1024 / 1024
+                    logger.info(f"  - VLC Instance: {vlc_size:.2f} MB")
+                    
+                    # Get media info if playing
+                    if hasattr(aaplayer.podcast_player, 'player') and aaplayer.podcast_player.player is not None:
+                        media = aaplayer.podcast_player.player.get_media()
+                        if media:
+                            media_size = objsize.get_deep_size(media) / 1024 / 1024
+                            logger.info(f"  - Current Media: {media_size:.2f} MB")
+            
+            # Files Player (Pygame-based)
+            if hasattr(aaplayer, 'file_player'):
+                files_size = objsize.get_deep_size(aaplayer.file_player) / 1024 / 1024
+                logger.info(f"Files Player Total: {files_size:.2f} MB")
+                if hasattr(aaplayer.file_player, 'track_list'):
+                    tracklist_size = objsize.get_deep_size(aaplayer.file_player.track_list) / 1024 / 1024
+                    logger.info(f"  - Track List: {tracklist_size:.2f} MB")
+                if hasattr(aaplayer.file_player, 'playback_manager'):
+                    manager_size = objsize.get_deep_size(aaplayer.file_player.playback_manager) / 1024 / 1024
+                    logger.info(f"  - Playback Manager: {manager_size:.2f} MB")
+        
+        # Database memory
+        logger.info("\n=== Database ===")
+        if 'DB' in globals():
+            db_size = objsize.get_deep_size(DB) / 1024 / 1024
+            logger.info(f"Main Database: {db_size:.2f} MB")
+        if 'DB_AOTD_CACHE' in globals():
+            cache_size = objsize.get_deep_size(DB_AOTD_CACHE) / 1024 / 1024
+            logger.info(f"AOTD Cache: {cache_size:.2f} MB")
+        
+        # Major Libraries Total Memory from memory maps
+        logger.info("\n=== Major Libraries ===")
+        maps = process.memory_maps()
+        vlc_total = 0
+        vlc_shared = 0
+        vlc_private = 0
+        pygame_total = 0
+        
+        for m in maps:
+            if 'vlc' in m.path.lower():
+                vlc_total += m.rss / 1024 / 1024
+                if m.path.endswith('.so'):  # Shared libraries
+                    vlc_shared += m.rss / 1024 / 1024
+                else:  # Private memory
+                    vlc_private += m.rss / 1024 / 1024
+            elif 'pygame' in m.path.lower():
+                pygame_total += m.rss / 1024 / 1024
+                
+        logger.info(f"VLC Total: {vlc_total:.2f} MB")
+        logger.info(f"  - Shared Libraries: {vlc_shared:.2f} MB")
+        logger.info(f"  - Private Memory: {vlc_private:.2f} MB")
+        logger.info(f"Pygame Total: {pygame_total:.2f} MB")
+        
+        # Active Threads
+        logger.info("\n=== Active Threads ===")
+        active_threads = threading.enumerate()
+        logger.info(f"Total Threads: {len(active_threads)}")
+        for thread in active_threads:
+            thread_type = ""
+            if "rfid_reader" in thread.name.lower():
+                thread_type = "(RFID Reader)"
+            elif "write_worker" in thread.name.lower():
+                thread_type = "(Reporter)"
+            elif thread.name == "MainThread":
+                thread_type = "(Main)"
+            elif "held" in thread.name.lower():
+                thread_type = "(Held)"
+            logger.info(f"  {thread.name} {thread_type}")
+            
+        logger.info("=" * 50)
+        
+    except Exception as e:
+        logger.error(f"Error in memory logging: {e}")
+        logger.error(traceback.format_exc())
+
 def alchemy_app_runtime():
     global DB, APP_RUNNING, ALBUM_OF_THE_DAY_DATE, DB_AOTD_CACHE, AOTD_SCHEDULER, aaplayer
 
@@ -679,10 +798,16 @@ def alchemy_app_runtime():
     logger.debug("Scheduling error log email for 4:25am Eastern Time.")
     AOTD_SCHEDULER.add_job(schedule_handler_send_receint_errors, CronTrigger(hour=4, minute=25, timezone=eastern))
 
-
     logger.debug("Scheduling player shutdown to address times when the player is left on overnight.")
     AOTD_SCHEDULER.add_job(schedule_handler_shutdown_player, CronTrigger(hour=3, minute=15, timezone=eastern))
+    
+    #AOTD_SCHEDULER.add_job(schedule_handler_shutdown_player, CronTrigger(minute='*/1', timezone=eastern))
+    
 
+
+    # Schedule memory usage logging every 10 minutes
+    #logger.debug("Scheduling memory usage logging.")
+    #AOTD_SCHEDULER.add_job(log_memory_usage, CronTrigger(minute='*/5', timezone=eastern))
 
     AOTD_SCHEDULER.start()
 
@@ -2096,14 +2221,16 @@ def schedule_handler_shutdown_player():
 
     This is to address times when the player is left on overnight.
     """
-    logger.debug("Scheduled shutdown of the player.")
-    aaplayer.shutdown_player()
-    time.sleep(1)
-    logger.debug("Player shutdown complete.")
+    logger.debug("Scheduled memory cleanup of the players.")
+    aaplayer.cleanup_memory()
+    time.sleep(.5)
     ## we need to restart the player after shutting it down. 
     ## so that the player doesn't impload when we call functions like play_pause_track()
     ## when the player isn't started up
-    aaplayer.startup()
+    gc.collect()
+    logger.debug("Garbage collection complete.")
+
+    
 
 def find_card_png(directory):
     """

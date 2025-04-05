@@ -32,8 +32,65 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
         #self.feedback_instance = vlc.Instance()
         self.feedback_player = self.feedback_instance.media_player_new()
         
-
     def shutdown_player(self):
+        """
+        Shutdown the podcast player and cleanup all VLC resources
+        """
+        try:
+            self.logger.debug(f"Shutting down stream player.")
+            
+            # Check if player attributes exist
+            if not hasattr(self, 'player') or not hasattr(self, 'feedback_player'):
+                self.logger.debug(f"Stream player attributes not initialized yet.")
+                return
+            
+            if self.player is None and self.feedback_player is None:
+                self.logger.debug(f"Stream player is already shutdown.")
+                return
+            
+            # Stop playback
+            if self.player is not None:
+                self.player.stop()
+            if self.feedback_player is not None:
+                self.feedback_player.stop()
+            
+            # give vlc time to stop playing before we try to release the memory
+            time.sleep(0.1)
+            
+            # Release main player resources
+            self.logger.debug(f"Releasing vlc memory.")
+            if self.player is not None:
+                media = self.player.get_media()
+                if media is not None:
+                    media.release()
+                self.player.release()
+            
+            # Release feedback player resources
+            if self.feedback_player is not None:
+                feedback_media = self.feedback_player.get_media()
+                if feedback_media is not None:
+                    feedback_media.release()
+                self.feedback_player.release()
+            
+            # Clear track lists
+            self.track_list = []
+            self.track_list_original_order = []
+            
+            time.sleep(0.1)
+
+            # Set players to None to ensure proper garbage collection
+            # but keep VLC instances alive for reuse
+            media = None
+            feedback_media = None
+            if hasattr(self, 'player'):
+                del self.player
+            if hasattr(self, 'feedback_player'):
+                del self.feedback_player
+
+        except Exception as e:
+            self.logger.error(f'Failed to shutdown stream player: {e}')
+
+    """def shutdown_player(self):
         try:
             self.logger.debug(f"Shutting down stream player.")
             self.stream_name = None
@@ -71,15 +128,28 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
             #Now set all the media players to None.
             #So we really, really don't hold on to them.
             media = None 
-            self.player = None
             feedback_media = None
-            self.feedback_player = None
+            del self.player, self.feedback_player
             time.sleep(0.1)
 
         except Exception as e:
-            self.logger.error(f'Failed to shutdown stream player: {e}')   
+            self.logger.error(f'Failed to shutdown stream player: {e}')   """
 
 
+    def cleanup_memory(self):
+        try:
+            self.logger.debug(f"Cleaning up stream player memory.")
+            self.shutdown_player()
+            self.instance.release()
+            self.feedback_instance.release()
+            time.sleep(0.2)
+            del self.instance, self.feedback_instance
+            self.instance = vlc.Instance()
+            self.feedback_instance = vlc.Instance()
+            time.sleep(0.1)
+            self.startup()
+        except Exception as e:
+            self.logger.error(f'Failed to cleanup memory for stream player: {e}')
 
     def get_current_track(self) -> str:
         return self.stream_name

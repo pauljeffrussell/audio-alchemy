@@ -25,6 +25,18 @@ class AudioManager(AbstractAudioPlayer):
         # Optional: you could store the logger if you want to reuse it locally
         self.logger = None
 
+    def cleanup_memory(self):
+        self.logger.debug(f"Cleaning up audio manager memory.")
+        
+        self.file_player.cleanup_memory()
+        
+        self.stream_player.cleanup_memory()
+        
+        self.podcast_player.cleanup_memory()
+        
+        
+        
+        
     def set_player(self, player_type: str):
         """
         Swap out the current player for another. For example:
