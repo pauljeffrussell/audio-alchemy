@@ -103,6 +103,10 @@ class AudioManager(AbstractAudioPlayer):
         """Return the path/name of the current track from the active player."""
         return self.current_player.get_current_track()
     
+    def get_current_rfid(self) -> int:
+        """Return the RFID of the current album from the active player."""
+        return self.current_player.get_current_rfid()
+    
     def get_whats_playing(self) -> str:
         """Return the path/name of what is currently playing."""
         return self.current_player.get_whats_playing()

@@ -1142,6 +1142,10 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
     def play_in_order_from_random_track(self):
         pass
 
+    def get_current_rfid(self) -> int:
+        """Return the RFID of the current podcast."""
+        return self.s_album_rfid
+
 
 
  
