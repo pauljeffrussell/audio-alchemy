@@ -165,6 +165,11 @@ class AbstractAudioPlayer(ABC):
         return self.get_current_track()
     
     @abstractmethod
+    def get_current_rfid(self) -> int:
+        """Return the RFID of the current album."""
+        pass
+    
+    @abstractmethod
     def get_whats_playing(self) -> str:
         """Return the name of the currently playing track or stream."""
         pass

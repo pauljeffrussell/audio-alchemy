@@ -40,6 +40,7 @@ import signal
 import psutil
 import objsize
 import gc
+import markdown
 
 
 
@@ -356,7 +357,8 @@ def read_db(csv):
                                        'shuffle_albums': float, 'shuffle_songs': float, \
                                        'repeat': float, 'christmas_aotd': float, \
                                        'exclude_from_random': float, 'aotd_date': str, \
-                                       'rfid': str, 'loaded_hq': str, 'remember_position': float} )
+                                       'rfid': str, 'loaded_hq': str, 'remember_position': float, \
+                                       'album_story': str} )
     except Exception as e:
         ## this can happen if some chucklehead accidentally puts a letter in one of the fields 
         ## that's supposed to have a float. And by some chcklehead, I, of course mean me.
@@ -377,6 +379,7 @@ def clean_up_catalog_db_column_types():
     DB['folder'] = DB['folder'].fillna(BLANK)
     DB['labels'] = DB['labels'].fillna(BLANK)
     DB['aotd_greeting'] = DB['aotd_greeting'].fillna(BLANK)
+    DB['album_story'] = DB['album_story'].fillna(BLANK)
     
    
 
@@ -1108,6 +1111,24 @@ def command_card_handler(rfid_code):
             """
             
         aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Speak Album and Track Name", "COMMAND_SPEEK_CURRENT_TRACK_NAME", rfid_code)
+        return True
+    elif (command_code == CONFIG.COMMAND_EMAIL_CURRENT_TRACK):
+        ## We're going to email the current album to the user
+        current_track = aaplayer.get_current_track()
+        if current_track != None:
+            
+            ## Get the RFID of the current album from the player
+            current_rfid = aaplayer.get_current_rfid()
+            if current_rfid != None:
+                ## play the feedback sound that the command card is being processed.
+                aaplayer.play_feedback(CONFIG.FEEDBACK_PROCESSING)
+                ## Send the album of the day email with the current album's RFID
+                send_album_of_the_day_email(current_rfid, True)
+                aareporter.log_card_tap(CONFIG.CARD_TYPE_COMMAND, "Email Current Album", "COMMAND_EMAIL_CURRENT_TRACK", rfid_code)
+            else:
+                ## play the feedback sound that the command card is being processed.
+                aaplayer.play_feedback(CONFIG.FEEDBACK_RFID_NOT_FOUND)
+                logger.debug("Could not get current album RFID from player")
         return True
     elif (command_code == CONFIG.COMMAND_SEND_REMOVE_REQUEST):
         ## We're going to email the current track to the 
@@ -2251,7 +2272,7 @@ def find_card_png(directory):
             return directory + '/' + filename
     return None
 
-def send_album_of_the_day_email(rfid):
+def send_album_of_the_day_email(rfid, send_to_only_me=False):
     logger.debug(f'Sending an album of the day email...')
 
     album_name = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'Album'))
@@ -2260,6 +2281,7 @@ def send_album_of_the_day_email(rfid):
     album_url = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'url'))
     subject = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'aotd_greeting'))
     loaded_hq = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'loaded_hq'))
+    album_story = replace_non_strings(lookup_field_by_field(DB, 'rfid', rfid, 'album_story'))
     
     album_card_image = find_card_png(LIBRARY_CACHE_FOLDER + album_folder_name)
     if album_card_image:
@@ -2276,7 +2298,7 @@ def send_album_of_the_day_email(rfid):
         #subject = subject + datetime.now().strftime('%H%M%S')
 
 
-    body = f"""<div style="font-size: .8em;">Today's album of the day is:</div><br>"""
+    body = f"""<div style="font-size: .8em;">{"Currently playing:" if send_to_only_me else "Today's album of the day is:"}</div><br>"""
     
     if album_url != "":
         body = body + f'<a href="{album_url}">'
@@ -2296,6 +2318,28 @@ def send_album_of_the_day_email(rfid):
     if (album_card_image):
         body = body + f"""<br>
         <img src="cid:image1" alt="album card" style="width:90%; max-width:600px; height:auto;">"""
+
+    # Add album story if it exists
+    if album_story and album_story != BLANK:
+        # Check if the text contains Markdown syntax
+        has_markdown = any(char in album_story for char in ['*', '#', '-', '>', '`', '['])
+        
+        if has_markdown:
+            try:
+                # Convert Markdown to HTML
+                formatted_story = markdown.markdown(album_story)
+            except Exception as e:
+                logger.error(f"Error converting Markdown to HTML: {e}")
+                # Fallback to plain text if Markdown conversion fails
+                formatted_story = album_story.replace('\n', '<br>')
+        else:
+            # Plain text - just convert newlines to HTML breaks
+            formatted_story = album_story.replace('\n', '<br>')
+            
+        body = body + f"""<br><br>
+        <div style="font-size: 1em; line-height: 1.5; padding: 1em; background-color: #f8f8f8; border-radius: 5px;">
+            {formatted_story}
+        </div>"""
 
     body = body + f"""</b>
     <BR><BR><BR><BR>
@@ -2324,7 +2368,7 @@ def send_album_of_the_day_email(rfid):
     msg = MIMEMultipart('related')
     msg['Subject'] = subject
     msg['From'] = CONFIG.EMAIL_SENDER_NAME
-    msg['To'] = CONFIG.EMAIL_SEND_TO  # The receiver's email
+    msg['To'] = CONFIG.EMAIL_SEND_TO_ONLY_ME if send_to_only_me else CONFIG.EMAIL_SEND_TO  # The receiver's email
 
     # Attach the HTML body to the email
     msg.attach(MIMEText(body, 'html'))

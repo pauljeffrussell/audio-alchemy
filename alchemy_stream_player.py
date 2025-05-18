@@ -154,6 +154,10 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
     def get_current_track(self) -> str:
         return self.stream_name
     
+    def get_current_rfid(self) -> int:
+        """Return the RFID of the current stream."""
+        return None  # Streams don't have RFIDs
+
     def get_whats_playing(self) -> str:
         return self.stream_name
 

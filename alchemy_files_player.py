@@ -491,6 +491,10 @@ class AlchemyFilesPlayer(AbstractAudioPlayer):
             else:
                 return None
             
+    def get_current_rfid(self) -> int:
+        """Return the RFID of the current album."""
+        with self.playback_manager._lock:
+            return self.s_album_rfid
 
     def get_whats_playing(self) -> str:
         try:
