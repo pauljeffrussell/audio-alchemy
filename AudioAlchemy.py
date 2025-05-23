@@ -41,6 +41,7 @@ import psutil
 import objsize
 import gc
 import markdown
+import json
 
 
 
@@ -90,6 +91,13 @@ DB_CACHE = CONFIG.DB_CACHE_LOCATION + "dbcache.csv"
 ## It stores the album of the day and we use that to keep 
 ## the album of the day from repeating too frequently.
 FILE_AOTD_CACHE = CONFIG.DB_CACHE_LOCATION + "aotdcache.csv"
+
+## This is where blocked tracks are stored
+## It stores tracks that the user has requested to never play again
+BLOCKED_TRACKS_FILE = CONFIG.DB_CACHE_LOCATION + "blocked_tracks.json"
+
+## In-memory hashmap of blocked tracks
+BLOCKED_TRACKS = {}
 
 """
 ## Used to calculate the number of days before an album can be chosed for
@@ -784,6 +792,9 @@ def alchemy_app_runtime():
     # Load the database of RFID tags and their matching albums
     DB = load_database(FLAG_LOAD_DB_FROM_THE_WEB)
     
+    # Load blocked tracks
+    load_blocked_tracks()
+    
     ## Every time the system restarts restart the system. Album of the day will instead 
     ## be sent the day after the system is rebooted.
     set_album_of_the_day_date_and_rfid()
@@ -1149,6 +1160,9 @@ def command_card_handler(rfid_code):
             aaplayer.next_track()
 
 
+            # Add track to blocked list
+            add_blocked_track(current_track_for_email)
+            
             #send an email with the track we just skipped
             send_email_with_remove_request(current_track_for_email)
             
@@ -1798,10 +1812,119 @@ def get_tracks(folders, shuffle_tracks):
     for mp3_file in all_tracks:
         logger.debug(f'Found Track: {mp3_file}...') 
 
-    return all_tracks   
+    # Filter out blocked tracks before returning
+    filtered_tracks = filter_blocked_tracks(all_tracks)
+    
+    return filtered_tracks   
 
 
 
+
+
+"""
+#################################################################################
+
+            Blocked Tracks Management
+
+#################################################################################"""
+
+def load_blocked_tracks():
+    """
+    Loads blocked tracks from JSON file into memory.
+    Returns the blocked tracks dictionary.
+    """
+    global BLOCKED_TRACKS
+    
+    try:
+        if os.path.exists(BLOCKED_TRACKS_FILE):
+            with open(BLOCKED_TRACKS_FILE, 'r') as f:
+                BLOCKED_TRACKS = json.load(f)
+                logger.info(f"Loaded {len(BLOCKED_TRACKS)} blocked tracks from {BLOCKED_TRACKS_FILE}")
+        else:
+            BLOCKED_TRACKS = {}
+            logger.info("No blocked tracks file found, starting with empty blocked list")
+    except Exception as e:
+        logger.error(f"Error loading blocked tracks: {e}")
+        BLOCKED_TRACKS = {}
+    
+    return BLOCKED_TRACKS
+
+def save_blocked_tracks():
+    """
+    Saves the blocked tracks hashmap to JSON file.
+    """
+    global BLOCKED_TRACKS
+    
+    try:
+        with open(BLOCKED_TRACKS_FILE, 'w') as f:
+            json.dump(BLOCKED_TRACKS, f, indent=2)
+        logger.info(f"Saved {len(BLOCKED_TRACKS)} blocked tracks to {BLOCKED_TRACKS_FILE}")
+    except Exception as e:
+        logger.error(f"Error saving blocked tracks: {e}")
+
+def add_blocked_track(track_filename):
+    """
+    Adds a track to the blocked tracks list.
+    
+    Parameters:
+    - track_filename: The full path to the track file
+    """
+    global BLOCKED_TRACKS
+    
+    if track_filename and track_filename.strip():
+        # Use just the filename as the key for easier matching
+        filename = os.path.basename(track_filename)
+        BLOCKED_TRACKS[filename] = {
+            "date_blocked": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "full_path": track_filename,
+            "reason": "user_request"
+        }
+        save_blocked_tracks()
+        logger.info(f"Track blocked: {filename}")
+
+def is_track_blocked(track_filename):
+    """
+    Checks if a track is in the blocked list.
+    
+    Parameters:
+    - track_filename: The full path to the track file
+    
+    Returns:
+    - True if the track is blocked, False otherwise
+    """
+    global BLOCKED_TRACKS
+    
+    if not track_filename:
+        return False
+    
+    filename = os.path.basename(track_filename)
+    is_blocked = filename in BLOCKED_TRACKS
+    
+    if is_blocked:
+        logger.debug(f"Track is blocked: {filename}")
+    
+    return is_blocked
+
+def filter_blocked_tracks(tracks):
+    """
+    Filters out blocked tracks from a list of tracks.
+    
+    Parameters:
+    - tracks: List of track file paths
+    
+    Returns:
+    - List of tracks with blocked tracks removed
+    """
+    if not tracks:
+        return tracks
+    
+    filtered_tracks = [track for track in tracks if not is_track_blocked(track)]
+    
+    blocked_count = len(tracks) - len(filtered_tracks)
+    if blocked_count > 0:
+        logger.info(f"Filtered out {blocked_count} blocked tracks from playlist")
+    
+    return filtered_tracks
 
 
 """
