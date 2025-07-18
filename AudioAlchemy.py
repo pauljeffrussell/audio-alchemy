@@ -72,6 +72,8 @@ LAST_ALBUM_CARD = 0
 
 LAST_COMMAND_CARD = 0
 
+LAST_COMMAND_MUSIC_CARD = 0
+
 COUNT_SINCE_CARD_REMOVED = 0
 
 SLEEP_DURATION_MAIN_LOOP = 60*60
@@ -930,11 +932,12 @@ def app_shutdown():
 #################################################################################"""
 
 def handle_tag_detected(rfid):
-    global LAST_ALBUM_CARD, LAST_COMMAND_CARD, COUNT_SINCE_CARD_REMOVED
+    global LAST_ALBUM_CARD, LAST_COMMAND_CARD, LAST_COMMAND_MUSIC_CARD, COUNT_SINCE_CARD_REMOVED
 
     #logger.debug(f"\n\nrfid: {rfid}.")
     #logger.debug(f"LAST_ALBUM_CARD: {LAST_ALBUM_CARD}.")
     #logger.debug(f"LAST_COMMAND_CARD: {LAST_COMMAND_CARD}.")
+    #logger.debug(f"LAST_COMMAND_MUSIC_CARD: {LAST_COMMAND_MUSIC_CARD}.")
     #logger.debug(f"COUNT_SINCE_CARD_REMOVED: {COUNT_SINCE_CARD_REMOVED}.")
 
     if (rfid == LAST_ALBUM_CARD):
@@ -954,6 +957,14 @@ def handle_tag_detected(rfid):
         ## We reset it back to zero every time we get a matched read.
         COUNT_SINCE_CARD_REMOVED = 0
         return
+
+    if (rfid == LAST_COMMAND_MUSIC_CARD):
+        #logger.debug("Matched last random albums card.")
+        ## The RFID reader won't successfully read every time, so this counter will go up
+        ## We reset it back to zero every time we get a matched read.
+        COUNT_SINCE_CARD_REMOVED = 0
+        LAST_COMMAND_CARD = 0
+        return
     
     ## This is where we check and see if the card has stopped seeing a card.
     ## The rule is, album cards can be removed and placed back any time without 
@@ -964,33 +975,49 @@ def handle_tag_detected(rfid):
         COUNT_SINCE_CARD_REMOVED += 1
 
         if (COUNT_SINCE_CARD_REMOVED > MAX_COUNT_SINCE_CARD_REMOVED):
-
             ## only execute this if the last album hasn't been cleared AND the music isn't playing.
             ## this alows us to pick up the album card and look at it as long as we want
             ## as long as the music is playing.
-            if (LAST_ALBUM_CARD != 0 and not aaplayer.is_playing()):
+            #if (LAST_ALBUM_CARD != 0 and not aaplayer.is_playing()):
                 ## if no card is read for x times and the player is stopped, 
                 ## remove this card from the last list so it can be tapped again.
-                LAST_ALBUM_CARD = 0
+            #    LAST_ALBUM_CARD = 0
 
-            #command cards are only good for
+            # Clear random albums card memory only if music is not playing
+            if not aaplayer.is_playing():
+                LAST_COMMAND_MUSIC_CARD = 0
+                LAST_ALBUM_CARD = 0
+                #logger.debug('Cleared last random albums card and last album card due to inactivity.')
+
+            #command cards are only good for one use
             LAST_COMMAND_CARD = 0
             COUNT_SINCE_CARD_REMOVED = 0
         
         return
             
-
     if (command_card_handler(rfid) == True):
         ## you found a command card
         COUNT_SINCE_CARD_REMOVED = 0
-        LAST_COMMAND_CARD = rfid
-        logger.debug(f'Completed command card: {rfid}...')
+        
+        # Check if this is a music command card
+        if (str(rfid) in CONFIG.COMMAND_MUSIC_CARDS):
+            # this is a music command card so let's 
+            # remember it so we can pick it up and put it back down.
+            LAST_COMMAND_MUSIC_CARD = rfid
+            #logger.debug(f'Completed random albums card: {rfid}...')
+        else:
+            LAST_COMMAND_CARD = rfid
+            #logger.debug(f'Completed command card: {rfid}...')
 
     elif(music_card_handler(rfid) == True):
         # you found a music card!
         COUNT_SINCE_CARD_REMOVED = 0
         LAST_ALBUM_CARD = rfid
-        logger.debug(f'Completed music card: {rfid}...')
+        # Clear command card memory when a music card is detected
+        LAST_COMMAND_CARD = 0
+        # Clear random albums card memory when a music card is detected
+        LAST_COMMAND_MUSIC_CARD = 0
+        #logger.debug(f'Completed music card: {rfid}...')
     else:
         ## you don't know this card. Treat it like a command card 
         ## so you don't keep reading it over and over.
@@ -998,7 +1025,7 @@ def handle_tag_detected(rfid):
         LAST_COMMAND_CARD = rfid
 
 
-def rfid_matches_command_card_array(rfid, command_card_array):
+'''def rfid_matches_command_card_array(rfid, command_card_array):
   """
   This function checks if a number is present in an array.
 
@@ -1012,7 +1039,7 @@ def rfid_matches_command_card_array(rfid, command_card_array):
   for element in command_card_array:
     if element == rfid:
       return True
-  return False       
+  return False    '''   
 
 def command_card_handler(rfid_code):
     """
@@ -1858,7 +1885,7 @@ def save_blocked_tracks():
     try:
         with open(BLOCKED_TRACKS_FILE, 'w') as f:
             json.dump(BLOCKED_TRACKS, f, indent=2)
-        logger.info(f"Saved {len(BLOCKED_TRACKS)} blocked tracks to {BLOCKED_TRACKS_FILE}")
+        logger.debug(f"Saved {len(BLOCKED_TRACKS)} blocked tracks to {BLOCKED_TRACKS_FILE}")
     except Exception as e:
         logger.error(f"Error saving blocked tracks: {e}")
 

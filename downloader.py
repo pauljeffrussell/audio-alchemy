@@ -175,13 +175,23 @@ def lookup_field_by_field(df, search_column, search_term, result_column):
     # Check if the value is found in the DataFrame
     search_term_string = str(search_term)
     
+    # First check if the value is nan
+    if pd.isna(search_term):
+        #logging.warning(f'The search term is nan in column {search_column}.')
+        return 0
+        
     if search_term_string in df[search_column].values:
         # Find the row where the value is located
         row_index = df[df[search_column] == search_term_string].index[0]
         # Get the value in the corresponding column
         result_value = df.loc[row_index, result_column]
-        # Print the value
         
+        # Check if result is nan
+        if pd.isna(result_value):
+            #logging.warning(f'Found nan value in column {result_column} for {search_term} in {search_column}.')
+            return 0
+            
+        # Print the value
         logging.debug(f'Found {result_column}: {result_value}s')
         return result_value
     else:
@@ -216,30 +226,24 @@ def lookup_album_url_by_field(df, field, value_to_lookup):
 def list_non_downloaded_albums():
     global DB, TBD_DOWNLOAD, LIBRARY_SOURCE_FOLDER, TBD_NO_DOWNLOAD
     
-    
     TBD_DOWNLOAD = []
     for album_folder_name in DB['folder'].values:
-        #url = lookup_album_url_by_album_name(DB, album_name)
-        
-        
-        
+        # Skip nan values
+        if pd.isna(album_folder_name):
+            #logging.warning(f'Found album with no folder name in database')
+            continue
+            
         url = str(lookup_field_by_field(DB, 'folder', album_folder_name, 'url'))
         
-        
-        #if (url !=0):
-        #    album_id = get_album_id(url)
         if (url.startswith('https://music.youtube.com') == False and url.startswith('https://www.youtube.com') == False):
-               TBD_NO_DOWNLOAD.append(album_folder_name)
-               album_folder_name = 0
-           
+            TBD_NO_DOWNLOAD.append(album_folder_name)
+            album_folder_name = 0
         
         if (album_folder_name != 0):
             album_folder = LIBRARY_SOURCE_FOLDER + album_folder_name
-
             album_destination_folder = LIBRARY_CACHE_FOLDER + album_folder_name
             logging.debug(f'CHECKING {album_folder}s...')
             if os.path.exists(album_folder):
-                #if os.path.isdir(folder_name): 
                 logging.debug (f'SKIP -  Folder Exists: {album_folder}')
             elif os.path.exists(album_destination_folder):
                 logging.debug (f'SKIP -  Folder Exists: {album_destination_folder}.')
@@ -247,14 +251,11 @@ def list_non_downloaded_albums():
                 logging.debug (f'ADDING - album folder {album_folder}s.')
                 TBD_DOWNLOAD.append(album_folder_name)
 
-    
     if len(TBD_DOWNLOAD) == 0:
         print ('All albums with links downloaded.')
     else:
-        
         for idx, album in enumerate(TBD_DOWNLOAD):
             print("{}  {}".format(idx, album))
-    
 
 def random_sleep():
     # Generate a random value between 2 and 6 seconds 
