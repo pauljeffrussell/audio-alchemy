@@ -138,7 +138,7 @@ AOTD_REPEAT_LIMIT = .9
 #### THESE ARE NEW
 BLANK = 'BLANK'
 
-SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG']
+SUPPORTED_EXTENSIONS = ['.mp3', '.MP3', '.wav', '.WAV', '.ogg', '.OGG', '.flac', '.FLAC']
 
 BUTTON_HOLD_DURATION = CONFIG.BUTTON_HOLD_DURATION
 
