@@ -84,9 +84,10 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
             feedback_media = None
             if hasattr(self, 'player'):
                 del self.player
+                self.player = None
             if hasattr(self, 'feedback_player'):
                 del self.feedback_player
-
+                self.feedback_player = None
         except Exception as e:
             self.logger.error(f'Failed to shutdown stream player: {e}')
 
@@ -319,9 +320,12 @@ class AlchemyStreamPlayer(AbstractAudioPlayer):
 
     def is_playing(self) -> bool:
 
-        if self.player is None:
+        if not hasattr(self, 'player') or self.player is None:
             return False
-        return self.player.is_playing() == 1
+        return self.player.is_playing() 
+        #if self.player is None:
+        #    return False
+        #return self.player.is_playing() == 1
     
 
     def set_logger(self, logger):

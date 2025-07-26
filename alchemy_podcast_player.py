@@ -278,9 +278,11 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
             feedback_media = None
             if hasattr(self, 'player'):
                 del self.player
+                self.player = None
             if hasattr(self, 'feedback_player'):
                 del self.feedback_player
-
+                self.feedback_player = None
+                
         except Exception as e:
             self.logger.error(f'Failed to shutdown podcast player: {e}')
 
@@ -777,12 +779,9 @@ class AlchemyPodcastPlayer(AbstractAudioPlayer):
         """
         Return whether the player is currently playing.
         """
-
-        if self.player is None:
+        if not hasattr(self, 'player') or self.player is None:
             return False
         return self.player.is_playing()
-
-
     
            
     def forward_button_short_press(self):
