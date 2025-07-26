@@ -42,3 +42,9 @@ s1.py
 convert/*
 convert_to_flac.py
 .gitignore
+
+.vscode/*
+alchemybackup/*
+audio-alchemy/*
+audio-alchemy/
+oldmess/*
