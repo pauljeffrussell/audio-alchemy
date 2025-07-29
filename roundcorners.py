@@ -94,8 +94,8 @@ def process_directory(input_dir, output_dir, radius_in_inches):
 
 
 # Example usage
-input_directory = './cards/2025-06/60/'
-output_directory = './cards/2025-06a-round/'
+input_directory = './cards/2025-08/'
+output_directory = './cards/2025-08-round/'
 corner_radius_in_inches = 0.125  # Set the corner radius in inches
 
 process_directory(input_directory, output_directory, corner_radius_in_inches)
